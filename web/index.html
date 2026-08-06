@@ -73,6 +73,17 @@
   }
   .flash.correct { background: rgba(80, 220, 100, 0.9); }
   .flash.incorrect { background: rgba(220, 80, 80, 0.9); }
+  .target-marker {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    margin-left: -8px;
+    margin-top: -8px;
+    border: 2px solid rgba(255, 220, 60, 0.95);
+    border-radius: 50%;
+    pointer-events: none;
+    box-sizing: border-box;
+  }
   #progress { margin-top: 10px; font-size: 13px; color: #777; flex: 0 0 auto; }
   #summary { text-align: left; font-size: 14px; line-height: 1.6; }
 </style>
@@ -94,6 +105,13 @@
   <label for="grid-select">Grid</label>
   <select id="grid-select">
     <option value="3x3">3x3</option>
+    <option value="4x3">4x3</option>
+    <option value="16x9">16x9</option>
+  </select>
+  <label for="mode-select">Mode</label>
+  <select id="mode-select">
+    <option value="train">Train (feedback after every trial)</option>
+    <option value="test">Test (no feedback until block ends)</option>
   </select>
   <label for="num-trials">Number of trials</label>
   <input id="num-trials" type="number" value="24" min="1">

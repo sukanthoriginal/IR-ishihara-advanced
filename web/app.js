@@ -14,7 +14,7 @@ let manifest = null;
 let audioCtx = null;
 let audioBuffers = {}; // wav filename -> AudioBuffer
 let trialLog = [];
-let session = null; // { participantId, arm, numTrials, trialIndex }
+let session = null; // { participantId, arm, mode, numTrials, trialIndex }
 let currentTrial = null; // { cell, audioStartMs, awaitingClick }
 
 document.getElementById('start-btn').addEventListener('click', startSession);
@@ -24,6 +24,7 @@ async function startSession() {
   const grid = document.getElementById('grid-select').value;
   const participantId = document.getElementById('participant-id').value.trim() || 'anon';
   const arm = document.getElementById('arm').value;
+  const mode = document.getElementById('mode-select').value;
   const numTrials = Math.max(1, parseInt(document.getElementById('num-trials').value, 10) || 24);
 
   document.getElementById('start-btn').disabled = true;
@@ -46,7 +47,7 @@ async function startSession() {
     audioBuffers[cell.wav] = await audioCtx.decodeAudioData(buf);
   }
 
-  session = { participantId, arm, numTrials, trialIndex: 0 };
+  session = { participantId, arm, mode, numTrials, trialIndex: 0 };
   trialLog = [];
 
   buildGrid();
@@ -68,6 +69,7 @@ function buildGrid() {
 }
 
 function runNextTrial() {
+  stopCurrentAudio();
   if (session.trialIndex >= session.numTrials) {
     finishSession();
     return;
@@ -82,12 +84,21 @@ function runNextTrial() {
   source.buffer = audioBuffers[cell.wav];
   source.connect(audioCtx.destination);
   currentTrial.audioStartMs = performance.now();
+  currentTrial.source = source;
   source.start();
+}
+
+function stopCurrentAudio() {
+  if (currentTrial && currentTrial.source) {
+    try { currentTrial.source.stop(); } catch (e) { /* already ended */ }
+    currentTrial.source = null;
+  }
 }
 
 function onGridClick(evt) {
   if (!currentTrial || !currentTrial.awaitingClick) return;
   currentTrial.awaitingClick = false;
+  stopCurrentAudio();
 
   const rect = gridEl.getBoundingClientRect();
   const xImg = (evt.clientX - rect.left) / rect.width * manifest.image_width;
@@ -105,6 +116,7 @@ function onGridClick(evt) {
   trialLog.push({
     participant_id: session.participantId,
     arm: session.arm,
+    mode: session.mode,
     grid_rows: manifest.grid_rows,
     grid_cols: manifest.grid_cols,
     trial_index: session.trialIndex,
@@ -119,21 +131,35 @@ function onGridClick(evt) {
     timestamp: new Date().toISOString(),
   });
 
-  showFeedback(evt, correct);
-  trialStatus.textContent = correct ? 'Correct!' : 'Incorrect';
+  if (session.mode === 'train') {
+    showFeedback(evt, correct, target);
+    trialStatus.textContent = correct ? 'Correct!' : 'Incorrect -- yellow ring shows the true target';
+  } else {
+    trialStatus.textContent = 'Recorded.';
+  }
 
   session.trialIndex++;
   setTimeout(runNextTrial, 700);
 }
 
-function showFeedback(evt, correct) {
+function showFeedback(evt, correct, target) {
   const rect = gridEl.getBoundingClientRect();
+
   const dot = document.createElement('div');
   dot.className = `flash ${correct ? 'correct' : 'incorrect'}`;
   dot.style.left = `${evt.clientX - rect.left}px`;
   dot.style.top = `${evt.clientY - rect.top}px`;
   gridEl.appendChild(dot);
   setTimeout(() => dot.remove(), 650);
+
+  if (!correct) {
+    const marker = document.createElement('div');
+    marker.className = 'target-marker';
+    marker.style.left = `${target.target_x_px / manifest.image_width * rect.width}px`;
+    marker.style.top = `${target.target_y_px / manifest.image_height * rect.height}px`;
+    gridEl.appendChild(marker);
+    setTimeout(() => marker.remove(), 650);
+  }
 }
 
 function finishSession() {
@@ -154,7 +180,7 @@ function finishSession() {
 }
 
 function downloadCsv() {
-  const cols = ['participant_id', 'arm', 'grid_rows', 'grid_cols', 'trial_index',
+  const cols = ['participant_id', 'arm', 'mode', 'grid_rows', 'grid_cols', 'trial_index',
     'target_cell', 'target_x_px', 'target_y_px', 'click_x_px', 'click_y_px',
     'correct', 'rt_ms', 'l2_error_px', 'timestamp'];
   const lines = [cols.join(',')];
@@ -165,7 +191,7 @@ function downloadCsv() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `voice_sim_${session.participantId}_${session.arm}_${Date.now()}.csv`;
+  a.download = `voice_sim_${session.participantId}_${session.arm}_${session.mode}_${Date.now()}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
