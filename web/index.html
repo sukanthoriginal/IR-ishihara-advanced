@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>vOICe soundscape localization</title>
+<style>
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #111;
+    color: #eee;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px 20px;
+    box-sizing: border-box;
+  }
+  h1 { font-size: 18px; font-weight: 500; color: #999; margin: 0 0 12px; flex: 0 0 auto; }
+  .screen { max-width: 520px; text-align: center; }
+  #trial-screen.screen {
+    max-width: none;
+    width: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .hidden { display: none; }
+  label { display: block; margin: 12px 0 4px; text-align: left; }
+  input, select { font-size: 14px; padding: 6px; width: 100%; box-sizing: border-box; }
+  button {
+    margin-top: 20px;
+    padding: 10px 24px;
+    font-size: 15px;
+    cursor: pointer;
+    background: #4a9eff;
+    border: none;
+    border-radius: 4px;
+    color: #fff;
+  }
+  button:disabled { background: #444; cursor: default; }
+  #trial-status { margin-bottom: 12px; font-size: 14px; color: #aaa; min-height: 20px; flex: 0 0 auto; }
+  #grid {
+    position: relative;
+    background: #222;
+    border: 1px solid #555;
+    cursor: crosshair;
+    display: grid;
+    margin: 0 auto;
+    /* Fills all remaining space in #trial-screen (a column flexbox) at a
+       16:10 shape. This is independent of the underlying 178x64 image aspect
+       ratio -- click coords are scaled to image space per-axis in app.js, so
+       the on-screen box shape doesn't need to match the image's native
+       ratio. Letting flex-grow + aspect-ratio + max-width/max-height resolve
+       the size means the browser computes the actual available space,
+       instead of us hand-guessing viewport-minus-chrome pixel budgets. */
+    flex: 1 1 auto;
+    min-height: 0;
+    aspect-ratio: 16 / 10;
+    max-width: 100%;
+    max-height: 100%;
+  }
+  .cell { border: 1px solid #333; }
+  .flash {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    margin-left: -7px;
+    margin-top: -7px;
+    border-radius: 50%;
+    pointer-events: none;
+  }
+  .flash.correct { background: rgba(80, 220, 100, 0.9); }
+  .flash.incorrect { background: rgba(220, 80, 80, 0.9); }
+  #progress { margin-top: 10px; font-size: 13px; color: #777; flex: 0 0 auto; }
+  #summary { text-align: left; font-size: 14px; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<h1>vOICe soundscape localization task</h1>
+
+<div id="setup-screen" class="screen">
+  <p>Listen to each soundscape and click the grid cell you think the sound came from.</p>
+  <label for="participant-id">Participant ID</label>
+  <input id="participant-id" type="text" value="test">
+  <label for="arm">Arm</label>
+  <select id="arm">
+    <option value="novice">novice</option>
+    <option value="supervised">supervised</option>
+    <option value="self-supervised">self-supervised</option>
+  </select>
+  <label for="grid-select">Grid</label>
+  <select id="grid-select">
+    <option value="3x3">3x3</option>
+  </select>
+  <label for="num-trials">Number of trials</label>
+  <input id="num-trials" type="number" value="24" min="1">
+  <br>
+  <button id="start-btn">Start block</button>
+</div>
+
+<div id="trial-screen" class="screen hidden">
+  <div id="trial-status">Loading...</div>
+  <div id="grid"></div>
+  <div id="progress"></div>
+</div>
+
+<div id="end-screen" class="screen hidden">
+  <h2>Block complete</h2>
+  <div id="summary"></div>
+  <button id="download-btn">Download CSV</button>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
