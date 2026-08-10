@@ -3,3 +3,6 @@
 __pycache__/
 *.pyc
 .aplay_shim/
+
+# Real participant run data -- never goes to the public repo.
+test_data/

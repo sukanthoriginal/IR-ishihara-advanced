@@ -84,8 +84,11 @@
     pointer-events: none;
     box-sizing: border-box;
   }
+  #ready-btn { margin-top: 12px; flex: 0 0 auto; }
   #progress { margin-top: 10px; font-size: 13px; color: #777; flex: 0 0 auto; }
   #summary { text-align: left; font-size: 14px; line-height: 1.6; }
+  #save-status { margin-top: 10px; font-size: 13px; color: #999; }
+  #save-status.error { color: #e28080; }
 </style>
 </head>
 <body>
@@ -122,13 +125,17 @@
 <div id="trial-screen" class="screen hidden">
   <div id="trial-status">Loading...</div>
   <div id="grid"></div>
+  <button id="ready-btn" class="hidden">Start when ready</button>
   <div id="progress"></div>
 </div>
 
 <div id="end-screen" class="screen hidden">
   <h2>Block complete</h2>
   <div id="summary"></div>
-  <button id="download-btn">Download CSV</button>
+  <button id="retry-btn">Retry block</button>
+  <button id="new-session-btn">New session</button>
+  <button id="download-btn">Save results</button>
+  <div id="save-status"></div>
 </div>
 
 <script src="app.js"></script>
