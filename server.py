@@ -40,7 +40,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def end_headers(self):
         path = self.path.split("?")[0]
-        if path in NO_CACHE_PATHS or path.endswith((".html", ".js")):
+        if path in NO_CACHE_PATHS or path.endswith((".html", ".js", ".mjs")):
             self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
             self.send_header("Pragma", "no-cache")
             self.send_header("Expires", "0")

@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IR–Ishihara role-substitution task</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0e0f0f;
+    --panel: #191a19;
+    --line: #343632;
+    --muted: #a3a69e;
+    --accent: #d4704f;
+    --accent-2: #7ab17b;
+    --paper: #f3efe4;
+    --ink: #1b1b18;
+  }
+  * { box-sizing: border-box; }
+  html, body { min-height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: #f0f0ea;
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    padding: 24px;
+  }
+  main { width: min(940px, 100%); margin: 0 auto; }
+  header { margin-bottom: 24px; }
+  h1 { font-size: clamp(24px, 4vw, 40px); line-height: 1.05; margin: 0 0 8px; font-weight: 650; }
+  h2 { margin-top: 0; }
+  .eyebrow { color: var(--accent); text-transform: uppercase; letter-spacing: .14em; font-size: 12px; font-weight: 700; }
+  .lede, .muted { color: var(--muted); }
+  a { color: #d9aa90; }
+  .screen {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: clamp(18px, 3vw, 30px);
+  }
+  .hidden { display: none !important; }
+  .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  label { display: block; color: var(--muted); font-size: 13px; margin-bottom: 6px; }
+  input, select {
+    width: 100%; background: #101110; color: #f3f3ed; border: 1px solid #444740;
+    border-radius: 8px; padding: 10px 12px; font-size: 15px;
+  }
+  button {
+    border: 0; border-radius: 9px; padding: 11px 18px; font: inherit; font-weight: 650;
+    color: white; background: var(--accent); cursor: pointer;
+  }
+  button:hover { filter: brightness(1.08); }
+  button:disabled { cursor: default; opacity: .45; }
+  .secondary { background: #3a3c38; }
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+  #trial-screen { text-align: center; }
+  #trial-stage {
+    position: relative; width: min(100%, 890px); aspect-ratio: 178 / 64; margin: 18px auto;
+    overflow: hidden; background: #1a1917; border: 1px solid #45453f; border-radius: 12px;
+  }
+  #plate { display: block; width: 100%; height: 100%; object-fit: cover; }
+  #mask {
+    position: absolute; inset: 0;
+    background-color: #282724;
+    background-image:
+      radial-gradient(circle at 18% 24%, #44423b 0 2px, transparent 3px),
+      radial-gradient(circle at 67% 63%, #181816 0 2px, transparent 3px),
+      radial-gradient(circle at 42% 81%, #3b3933 0 1px, transparent 2px);
+    background-size: 23px 19px, 29px 31px, 17px 27px;
+  }
+  #ready-panel {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; background: #171816; gap: 10px;
+  }
+  #trial-status { color: var(--muted); min-height: 22px; }
+  #progress { color: #777b72; font-size: 13px; }
+  #choices {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;
+    width: min(560px, 100%); margin: 18px auto 0;
+  }
+  .choice {
+    position: relative; background: var(--paper); border: 3px solid transparent; padding: 9px;
+    min-height: 92px;
+  }
+  .choice:hover, .choice:focus { border-color: var(--accent); filter: none; }
+  .choice img { display: block; width: 100%; height: 68px; object-fit: contain; image-rendering: auto; }
+  .choice-index {
+    position: absolute; left: 8px; top: 7px; color: #55554f; font-size: 12px; font-weight: 800;
+  }
+  #feedback { min-height: 24px; margin-top: 14px; font-weight: 650; }
+  .correct-text { color: var(--accent-2); }
+  .incorrect-text { color: #e78170; }
+  #summary { line-height: 1.65; }
+  #summary table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+  #summary th, #summary td { text-align: left; border-bottom: 1px solid var(--line); padding: 9px 5px; }
+  #save-status { margin-top: 12px; color: var(--muted); }
+  #save-status.error { color: #e78170; }
+  @media (max-width: 650px) {
+    body { padding: 12px; }
+    .form-grid { grid-template-columns: 1fr; }
+    #choices { gap: 8px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Colour-role substitution</div>
+    <h1>IR–Ishihara discrimination</h1>
+    <div class="lede">Can an IR soundscape define figure–ground membership the way visible hue does?</div>
+  </header>
+
+  <section id="setup-screen" class="screen">
+    <p>The same dot plate is tested with a visible red–green boundary or an IR-defined boundary. After the plate is masked, choose the glyph that its target dots formed.</p>
+    <div class="form-grid">
+      <div>
+        <label for="participant-id">Participant ID</label>
+        <input id="participant-id" placeholder="e.g. S01" required>
+      </div>
+      <div>
+        <label for="arm">Training arm</label>
+        <select id="arm">
+          <option value="novice">novice</option>
+          <option value="supervised">supervised</option>
+          <option value="self-supervised">self-supervised</option>
+        </select>
+      </div>
+      <div>
+        <label for="condition">Condition</label>
+        <select id="condition">
+          <option value="mixed">Balanced visible colour + IR colour</option>
+          <option value="visible">Visible colour only</option>
+          <option value="ir">IR colour only</option>
+          <option value="ir-scrambled">IR spatial-scramble control</option>
+        </select>
+      </div>
+      <div>
+        <label for="split">Stimulus split</label>
+        <select id="split">
+          <option value="train">Train glyphs</option>
+          <option value="test">Held-out glyphs</option>
+        </select>
+      </div>
+      <div>
+        <label for="mode">Feedback</label>
+        <select id="mode">
+          <option value="train">Train — trial feedback</option>
+          <option value="test">Test — no trial feedback</option>
+        </select>
+      </div>
+      <div>
+        <label for="num-trials">Trials</label>
+        <input id="num-trials" type="number" min="4" value="16">
+      </div>
+    </div>
+    <div class="actions">
+      <button id="start-btn">Load block</button>
+      <a href="../web/" style="align-self:center">Open localization task</a>
+    </div>
+  </section>
+
+  <section id="trial-screen" class="screen hidden">
+    <div id="trial-status">Preparing stimulus…</div>
+    <div id="trial-stage">
+      <img id="plate" class="hidden" alt="Ishihara dot plate">
+      <div id="mask" class="hidden" aria-hidden="true"></div>
+      <div id="ready-panel">
+        <button id="ready-btn">Start trial</button>
+        <span class="muted">or press Space</span>
+      </div>
+    </div>
+    <div id="choices" class="hidden" aria-label="Glyph choices"></div>
+    <div id="feedback"></div>
+    <div id="progress"></div>
+  </section>
+
+  <section id="end-screen" class="screen hidden">
+    <h2>Block complete</h2>
+    <div id="summary"></div>
+    <div class="actions">
+      <button id="download-btn">Save results</button>
+      <button id="retry-btn" class="secondary">New block, same settings</button>
+      <button id="new-session-btn" class="secondary">Change settings</button>
+    </div>
+    <div id="save-status"></div>
+  </section>
+</main>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
