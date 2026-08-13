@@ -34,6 +34,7 @@ class IshiharaGeneratorTests(unittest.TestCase):
                 variants_per_glyph=1,
                 out=out,
                 skip_audio=True,
+                raspivoice_bin=generator.DEFAULT_RASPIVOICE_BIN,
             )
             manifest_path = generator.generate(args)
             manifest = json.loads(manifest_path.read_text())

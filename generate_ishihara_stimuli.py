@@ -24,18 +24,20 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw
 
-from generate_stimuli import (
-    IMG_H,
-    IMG_W,
-    RASPIVOICE_BIN,
-    WAV_TOTAL_TIME_S,
-    ensure_aplay_shim,
-    run_raspivoice,
+import generate_stimuli as localization_generator
+
+
+IMG_H = localization_generator.IMG_H
+IMG_W = localization_generator.IMG_W
+WAV_TOTAL_TIME_S = localization_generator.WAV_TOTAL_TIME_S
+DEFAULT_RASPIVOICE_BIN = Path(
+    os.environ.get("RASPIVOICE_BIN", localization_generator.RASPIVOICE_BIN)
 )
 
 
@@ -204,12 +206,19 @@ def generate(args) -> Path:
     (out_dir / "glyphs").mkdir(exist_ok=True)
 
     if not args.skip_audio:
-        ensure_aplay_shim()
-        if not RASPIVOICE_BIN.exists():
+        localization_generator.ensure_aplay_shim()
+        raspivoice_bin = args.raspivoice_bin
+        if not raspivoice_bin.exists():
             raise SystemExit(
-                f"raspivoice binary not found at {RASPIVOICE_BIN}. "
-                "Build the companion IR-vOICe repository first, or use --skip-audio."
+                f"raspivoice binary not found at {raspivoice_bin}. "
+                "Pass --raspivoice-bin, set RASPIVOICE_BIN, build the companion "
+                "IR-vOICe repository, or use --skip-audio."
             )
+        if not os.access(raspivoice_bin, os.X_OK):
+            raise SystemExit(f"raspivoice binary is not executable: {raspivoice_bin}")
+        # The shared runner resolves its executable from its module-level
+        # constant. Point it at the explicitly selected binary for this run.
+        localization_generator.RASPIVOICE_BIN = raspivoice_bin
 
     for glyph_id in ALL_GLYPHS:
         make_glyph_mask(glyph_id).save(out_dir / "glyphs" / f"{glyph_id}.png")
@@ -239,9 +248,9 @@ def generate(args) -> Path:
                 scrambled_wav = trial_dir / "ir_scrambled.wav"
                 if not args.skip_audio:
                     print(f"[{trial_number + 1}] {stem}: generating aligned audio")
-                    run_raspivoice(aligned_path, aligned_wav)
+                    localization_generator.run_raspivoice(aligned_path, aligned_wav)
                     print(f"[{trial_number + 1}] {stem}: generating scrambled control")
-                    run_raspivoice(scrambled_path, scrambled_wav)
+                    localization_generator.run_raspivoice(scrambled_path, scrambled_wav)
 
                 stimuli.append({
                     "stimulus_id": stem,
@@ -288,6 +297,10 @@ def main():
     parser.add_argument(
         "--out", type=Path,
         default=Path(__file__).parent / "ishihara_stimuli",
+    )
+    parser.add_argument(
+        "--raspivoice-bin", type=Path, default=DEFAULT_RASPIVOICE_BIN,
+        help="path to the raspivoice executable (or set RASPIVOICE_BIN)",
     )
     parser.add_argument(
         "--skip-audio", action="store_true",

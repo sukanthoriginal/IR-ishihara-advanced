@@ -28,6 +28,15 @@ python3 -m pip install -r requirements.txt
 python3 generate_ishihara_stimuli.py
 ```
 
+The companion repository can live elsewhere. Pass its executable explicitly:
+
+```bash
+python3 generate_ishihara_stimuli.py \
+  --raspivoice-bin /Users/sukanth/Dev/Lossfunk/IR-vOICe/raspivoice/Release/raspivoice
+```
+
+Alternatively, set the `RASPIVOICE_BIN` environment variable.
+
 For image/UI development without audio:
 
 ```bash
