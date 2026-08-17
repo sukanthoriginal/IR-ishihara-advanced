@@ -52,17 +52,36 @@ same three-sweep presentation timing and avoids sound-versus-silence cues.
 
 ## Run
 
+On macOS, double-click the packaged **IR Ishihara Simulator.app**. Its bundle
+contains the server, task UI, and generated audio bank, so it does not need
+permission to read the source repository. It starts a localhost server on port
+8001, verifies the Ishihara page, and opens a standalone fullscreen Chrome
+window. Completed CSVs are saved under
+`~/Library/Application Support/IR Ishihara Simulator/test_data/`.
+
+After generating the audio bank, build a fresh Desktop app with:
+
 ```bash
-python3 server.py
+./tools/package_ishihara_app.sh
+```
+
+The packager refuses to overwrite an existing app. Move or rename the old app,
+or pass a different absolute output path as its first argument.
+
+The equivalent manual command is:
+
+```bash
+python3 server.py 8001
 ```
 
 Open:
 
-- `http://127.0.0.1:8000/web/` for localization.
-- `http://127.0.0.1:8000/ishihara/` for IR-Ishihara.
+- `http://127.0.0.1:8001/web/` for localization.
+- `http://127.0.0.1:8001/ishihara/` for IR-Ishihara.
 
-Completed blocks save to the gitignored `test_data/` directory. If the local
-save endpoint is unavailable, the browser downloads the CSV instead.
+When run manually, completed blocks save to the gitignored `test_data/`
+directory. The packaged app uses its Application Support directory described
+above. If the save endpoint is unavailable, the browser downloads the CSV.
 
 ## IR ambiguity-grammar conditions
 

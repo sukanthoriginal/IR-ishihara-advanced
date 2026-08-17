@@ -1,3 +1,5 @@
+import os
+import plistlib
 import re
 import unittest
 from html.parser import HTMLParser
@@ -30,9 +32,33 @@ class WebStaticTests(unittest.TestCase):
         looked_up = set(re.findall(r"getElementById\(['\"]([^'\"]+)", self.javascript))
         self.assertEqual(looked_up - parser.ids, set())
 
-    def test_recenter_gate_rejects_keyboard_activation(self):
+    def test_ready_gate_follows_the_selected_response_device(self):
         self.assertIn("event.detail === 0", self.javascript)
-        self.assertNotIn("event.code === 'Space'", self.javascript)
+        self.assertIn("session?.responseDevice === 'keyboard'", self.javascript)
+        self.assertIn("trialPhase === 'ready'", self.javascript)
+        self.assertIn("beginTrial('keyboard')", self.javascript)
+        self.assertIn("beginTrial('pointer')", self.javascript)
+        self.assertIn("press any key to start", self.javascript)
+        self.assertIn("trial_start_method", self.javascript)
+
+    def test_mac_launcher_uses_bundled_runtime_and_ishihara_page(self):
+        template = ROOT / "tools" / "ishihara_app_template"
+        executable = template / "IR-Ishihara-Launcher"
+        metadata = plistlib.loads((template / "Info.plist").read_bytes())
+        source = executable.read_text()
+        server_source = (ROOT / "server.py").read_text()
+        packager = (ROOT / "tools" / "package_ishihara_app.sh").read_text()
+        self.assertTrue(os.access(executable, os.X_OK))
+        self.assertEqual(metadata["CFBundleExecutable"], executable.name)
+        self.assertIn('Resources/runtime', source)
+        self.assertIn('Application Support/IR Ishihara Simulator/test_data', source)
+        self.assertIn('server_port="8001"', source)
+        self.assertIn('/ishihara/', source)
+        self.assertNotIn(str(ROOT), source)
+        self.assertNotIn('/Users/sukanth/Dev/Lossfunk', source)
+        self.assertIn('IR_VOICE_TEST_DATA_DIR', server_source)
+        self.assertIn('ishihara_stimuli', packager)
+        self.assertIn('codesign --verify', packager)
 
     def test_data_collection_defaults_are_controlled(self):
         self.assertRegex(
@@ -94,10 +120,10 @@ class WebStaticTests(unittest.TestCase):
         self.assertIn("const responseOnsetMs = await nextFrame()", self.javascript)
 
     def test_boot_is_cache_versioned_and_failure_is_visible(self):
-        self.assertIn('app.js?v=simple-ui-2', self.html)
+        self.assertIn('app.js?v=simple-ui-3', self.html)
         self.assertIn('id="boot-error"', self.html)
         self.assertIn(
-            "dataset.ishiharaAppVersion = 'simple-ui-2'",
+            "dataset.ishiharaAppVersion = 'simple-ui-3'",
             self.javascript,
         )
 

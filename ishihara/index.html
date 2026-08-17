@@ -182,6 +182,10 @@
     filter: none;
   }
   #ready-btn.recenter-target:disabled { opacity: .35; }
+  #ready-btn.recenter-target.keyboard-start {
+    cursor: default;
+    pointer-events: none;
+  }
   @media (prefers-reduced-motion: no-preference) {
     #ready-btn.recenter-target { animation: recenter-pulse 1.4s ease-in-out infinite; }
   }
@@ -372,8 +376,8 @@
         <canvas id="stimulus-canvas" class="hidden" role="img" aria-label="Static composite dot plate"></canvas>
         <div id="mask" class="hidden" aria-hidden="true"></div>
         <div id="ready-panel">
-          <button id="ready-btn" class="recenter-target" aria-label="Center cursor and start trial"></button>
-          <span id="ready-instruction">Click the center crosshair to start</span>
+          <button id="ready-btn" class="recenter-target" aria-label="Fixation crosshair"></button>
+          <span id="ready-instruction">Use the selected response control to start</span>
         </div>
       </div>
     </div>
@@ -406,6 +410,6 @@
     });
   })();
 </script>
-<script type="module" src="app.js?v=simple-ui-2"></script>
+<script type="module" src="app.js?v=simple-ui-3"></script>
 </body>
 </html>

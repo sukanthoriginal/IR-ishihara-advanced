@@ -2,7 +2,7 @@ import {
   buildSchedule, calibratedStageSize, compactStageSize, fitAspectRatio,
   median, mulberry32,
   repeatedStimulusDurationMs, repeatedSweepPosition,
-} from './task_logic.mjs?v=simple-ui-2';
+} from './task_logic.mjs?v=simple-ui-3';
 
 const STIMULUS_ROOT = '../ishihara_stimuli/';
 const MASK_DURATION_MS = 220;
@@ -50,13 +50,17 @@ let presentationAnimationId = null;
 
 startBtn.addEventListener('click', startSession);
 readyBtn.addEventListener('click', event => {
-  // Native buttons also synthesize click events for Space/Enter. Reject those
-  // here: the point of this gate is to place the pointer at screen center.
-  if (event.detail === 0) {
-    readyInstructionEl.textContent = 'Use the pointer to click the center crosshair';
+  if (session?.responseDevice === 'keyboard') {
+    readyInstructionEl.textContent = 'Look at the centre and press any key to start';
     return;
   }
-  beginTrial();
+  // Native buttons also synthesize click events for Space/Enter. Reject those
+  // for pointer blocks: this gate must place the pointer at screen centre.
+  if (event.detail === 0) {
+    readyInstructionEl.textContent = 'Use the pointer to click the centre crosshair';
+    return;
+  }
+  beginTrial('pointer');
 });
 document.getElementById('download-btn').addEventListener('click', saveResults);
 document.getElementById('retry-btn').addEventListener('click', retryBlock);
@@ -68,13 +72,22 @@ window.addEventListener('resize', onWindowResize);
 new ResizeObserver(fitTrialStage).observe(stageShellEl);
 presentationModeEl.addEventListener('change', updatePresentationControls);
 sessionPresetEl.addEventListener('change', updateSessionPreset);
-document.documentElement.dataset.ishiharaAppVersion = 'simple-ui-2';
+document.documentElement.dataset.ishiharaAppVersion = 'simple-ui-3';
 updatePresentationControls();
 updateSessionPreset();
 startBtn.disabled = false;
 startBtn.textContent = 'Start session';
 
 function onKeyDown(event) {
+  if (
+    trialPhase === 'ready'
+    && session?.responseDevice === 'keyboard'
+    && isKeyboardStartKey(event)
+  ) {
+    event.preventDefault();
+    beginTrial('keyboard');
+    return;
+  }
   if (
     acceptingChoice
     && session.responseDevice === 'keyboard'
@@ -85,6 +98,49 @@ function onKeyDown(event) {
     const button = choicesEl.querySelectorAll('.choice')[index];
     if (button) recordChoice(button.dataset.glyph, index, 'keyboard');
   }
+}
+
+function isKeyboardStartKey(event) {
+  const ignoredKeys = new Set([
+    'Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'NumLock', 'ScrollLock',
+    'Escape', 'Tab', 'Unidentified',
+  ]);
+  return !event.repeat
+    && !event.isComposing
+    && !event.metaKey
+    && !event.ctrlKey
+    && !event.altKey
+    && !ignoredKeys.has(event.key);
+}
+
+function usesKeyboardStart() {
+  return session?.responseDevice === 'keyboard';
+}
+
+function setReadyGate(action = 'start') {
+  const keyboard = usesKeyboardStart();
+  const messages = keyboard
+    ? {
+        start: 'Look at the centre and press any key to start',
+        retry: 'Look at the centre and press any key to retry',
+        fullscreen: 'Restore fullscreen, then press any key to retry',
+        audio: 'Audio could not start — press any key to retry',
+      }
+    : {
+        start: 'Click the centre crosshair to start',
+        retry: 'Click the centre crosshair to retry',
+        fullscreen: 'Restore fullscreen, then click the centre crosshair',
+        audio: 'Audio could not start — click the centre crosshair to retry',
+      };
+  readyInstructionEl.textContent = messages[action];
+  readyBtn.classList.toggle('keyboard-start', keyboard);
+  readyBtn.tabIndex = keyboard ? -1 : 0;
+  readyBtn.setAttribute(
+    'aria-label',
+    keyboard
+      ? 'Fixation crosshair; press any key to start trial'
+      : 'Centre pointer and start trial',
+  );
 }
 
 function updatePresentationControls() {
@@ -304,17 +360,22 @@ async function prepareNextTrial() {
     if (wav) await getAudioBuffer(wav);
     readyPanel.classList.remove('hidden');
     readyBtn.disabled = false;
-    readyInstructionEl.textContent = 'Click the center crosshair to start';
-    trialStatusEl.textContent = 'Ready — recenter before the stimulus.';
+    setReadyGate('start');
+    trialStatusEl.textContent = usesKeyboardStart()
+      ? 'Ready — look at the centre before the stimulus.'
+      : 'Ready — recenter the pointer before the stimulus.';
     trialPhase = 'ready';
-    readyBtn.focus();
+    if (usesKeyboardStart()) readyBtn.blur();
+    else readyBtn.focus();
   } catch (error) {
     trialStatusEl.textContent = `Stimulus failed to load: ${error.message}`;
   }
 }
 
-async function beginTrial() {
+async function beginTrial(startMethod) {
   if (!currentTrial || trialPhase !== 'ready' || readyPanel.classList.contains('hidden')) return;
+  trialPhase = 'starting';
+  currentTrial.startMethod = startMethod;
   readyBtn.disabled = true;
   const audioResume = audioCtx.state === 'running'
     ? Promise.resolve()
@@ -326,8 +387,9 @@ async function beginTrial() {
     } catch (_) {
       await audioResume.catch(() => {});
       readyBtn.disabled = false;
-      readyInstructionEl.textContent = 'Fullscreen is required — click again to retry';
+      setReadyGate('fullscreen');
       trialStatusEl.textContent = 'The stimulus was not presented.';
+      trialPhase = 'ready';
       return;
     }
   }
@@ -336,8 +398,9 @@ async function beginTrial() {
     await audioResume;
   } catch (_) {
     readyBtn.disabled = false;
-    readyInstructionEl.textContent = 'Audio could not start — click to retry';
+    setReadyGate('audio');
     trialStatusEl.textContent = 'The stimulus was not presented.';
+    trialPhase = 'ready';
     return;
   }
 
@@ -358,6 +421,8 @@ async function beginTrial() {
   }
   if (document.visibilityState !== 'visible') {
     readyBtn.disabled = false;
+    setReadyGate('retry');
+    trialPhase = 'ready';
     return;
   }
 
@@ -532,6 +597,7 @@ function recordChoice(choiceGlyph, responsePosition, responseMethod) {
     presentation_mode: session.presentationMode,
     presentation_scale_mode: scaleModeForPresentation(session.presentationMode),
     response_device: session.responseDevice,
+    trial_start_method: currentTrial.startMethod,
     response_method: responseMethod,
     display_id: session.displayId,
     display_width_cm: roundMetric(session.displayWidthCm),
@@ -1019,9 +1085,7 @@ function invalidateActiveAttempt(reason) {
   feedbackEl.textContent = 'Interrupted attempt excluded; the same trial will restart.';
   readyPanel.classList.remove('hidden');
   readyBtn.disabled = false;
-  readyInstructionEl.textContent = session.presentationMode.startsWith('fullscreen')
-    ? 'Restore fullscreen, then click the center crosshair'
-    : 'Click the center crosshair to retry';
+  setReadyGate(session.presentationMode.startsWith('fullscreen') ? 'fullscreen' : 'retry');
   trialStatusEl.textContent = `Attempt invalidated: ${reason.replaceAll('_', ' ')}.`;
   trialPhase = 'ready';
 }
@@ -1161,7 +1225,7 @@ function buildCsv(rows) {
     'requested_channel_recipe', 'condition',
     'visual_presentation', 'audio_presentation', 'audio_content', 'split', 'mode',
     'presentation_mode', 'presentation_scale_mode', 'response_device',
-    'response_method', 'display_id',
+    'trial_start_method', 'response_method', 'display_id',
     'display_width_cm', 'viewing_distance_cm',
     'target_stage_width_visual_angle_deg', 'pair_id', 'pair_position',
     'pair_condition_order', 'session_seed',

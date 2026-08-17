@@ -6,7 +6,7 @@ plus one extra endpoint the browser uses to save a finished run straight
 to disk:
 
     POST /api/save-run   body: {"filename": "...", "csv": "..."}
-    -> writes test_data/<sanitized filename>
+    -> writes test_data/<sanitized filename>, or IR_VOICE_TEST_DATA_DIR when set
 
 test_data/ is gitignored, so results never end up in the (public) repo.
 Binds to localhost only -- not reachable from the rest of the LAN.
@@ -19,7 +19,10 @@ import socketserver
 import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-TEST_DATA_DIR = os.path.join(ROOT, "test_data")
+TEST_DATA_DIR = os.environ.get(
+    "IR_VOICE_TEST_DATA_DIR",
+    os.path.join(ROOT, "test_data"),
+)
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
 
 SAFE_NAME = re.compile(r"[^A-Za-z0-9_.-]+")

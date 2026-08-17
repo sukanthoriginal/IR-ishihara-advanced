@@ -26,8 +26,9 @@ be drawn toward a meaningful decoy rather than reduced to an arbitrary guess.
 
 ## What happens in one trial
 
-1. The participant clicks a centre crosshair, fixing pointer position and
-   initiating the trial.
+1. The participant looks at a centre crosshair and initiates the trial using
+   the selected response device: any ordinary key for keyboard blocks, or a
+   centre-crosshair click for pointer blocks.
 2. The complete RGB scaffold appears statically. It never sweeps visually.
 3. Every trial plays three 1.05-second left-to-right vOICe soundscapes,
    separated by two 250 ms silent intervals. In an IR condition, the auditory
@@ -179,8 +180,11 @@ trials as if presentation size were identical:
   that size does not fit, and records target angle, achieved angle, and error.
   Expanded mode instead uses the largest native-aspect plate that fits;
   compact mode caps rendering at the native raster.
-- **Center-click gate:** every attempt begins only after a pointer click on the
-  center crosshair. Space/Enter cannot bypass this gate.
+- **Response-matched start gate:** keyboard blocks begin with any ordinary key,
+  so the participant never has to alternate between keyboard and trackpad.
+  Pointer blocks retain the centre-crosshair click, which recentres the pointer
+  before every attempt. Escape, Tab, modifier shortcuts, composing keys, and
+  held-key repeats cannot start a keyboard trial.
 - **Keyboard 1–4 response:** the recommended response mode avoids adding
   pointer-travel time to the discrimination RT. Pointer response remains
   available for pilot/debug blocks and is explicitly identified in the CSV.
@@ -227,6 +231,13 @@ Open <http://127.0.0.1:8001/ishihara/>. Omit the port to use port 8000. Increase
 `--variants-per-glyph` for a larger stimulus bank. For asset/UI development,
 add `--skip-audio`; runnable blocks require a bank generated with audio because
 even non-probe trials contain the background carrier.
+
+On this Mac, the packaged **IR Ishihara Simulator.app** performs the server and
+browser steps automatically. The app contains its own copy of the UI, server,
+and generated audio bank; completed CSVs are written to
+`~/Library/Application Support/IR Ishihara Simulator/test_data/`.
+Rebuild it after UI or stimulus changes with
+`./tools/package_ishihara_app.sh` from the repository root.
 
 If the executable lives elsewhere, use either:
 
