@@ -6,9 +6,10 @@ performance with vOICe soundscapes generated from simulated infrared frames.
 ## Tasks
 
 - `web/`: the original point-localization task (3x3, 4x3 and 16x9).
-- `ishihara/`: an IR colour-role substitution task. The same glyph mask is
-  rendered either as a visible red/green boundary or as an IR-bright/IR-dim
-  boundary delivered through the vOICe soundscape.
+- `ishihara/`: an ambiguity-grammar task in which a coherent visible scaffold
+  becomes a different glyph only when a diagnostic visible-colour or IR-audio
+  component is recovered. See [`ishihara/README.md`](ishihara/README.md) for
+  the experimental rationale and controls.
 
 ## Generate IR-Ishihara stimuli
 
@@ -44,9 +45,10 @@ python3 generate_ishihara_stimuli.py --skip-audio
 ```
 
 The generated bank is written to `ishihara_stimuli/` and intentionally
-gitignored. By default it contains four training glyphs, four held-out glyphs,
-three independently seeded dot layouts per glyph, aligned IR soundscapes and
-spatially scrambled controls.
+gitignored. It spans four ambiguity families, four channel recipes, familiar
+and held-out dot layouts, aligned and scrambled probes, and matched
+background-only carriers. The carrier ensures that every condition has the
+same three-sweep presentation timing and avoids sound-versus-silence cues.
 
 ## Run
 
@@ -62,16 +64,17 @@ Open:
 Completed blocks save to the gitignored `test_data/` directory. If the local
 save endpoint is unavailable, the browser downloads the CSV instead.
 
-## IR-Ishihara conditions
+## IR ambiguity-grammar conditions
 
-- **Visible:** green target dots among red background dots.
-- **IR:** all dots share the same visible red distribution; only IR
-  reflectance defines the target glyph.
-- **IR scrambled:** preserves the count and intensity distribution of IR-bright
-  dots while shuffling their positions.
-- **Mixed:** balanced visible and aligned-IR trials in one block.
+- **Mixed:** paired visible-probe and aligned-IR-probe trials for the same
+  scaffold, geometry, and response set.
+- **Visible composite:** the diagnostic probe is an ordinary visible colour;
+  audio carries matched background texture only.
+- **IR composite:** the visible scaffold omits the probe and aligned IR audio
+  supplies it.
+- **Visible-only, IR-only, and scrambled-IR controls:** measure decoy capture,
+  probe decoding without the scaffold, and dependence on spatial geometry.
 
-The plate is shown for the full 1.05-second soundscape duration, masked, and
-followed by a four-image forced choice. Response time begins when the choices
-appear, avoiding the left-to-right evidence-time confound in the serial audio
-scan.
+The RGB plate remains static while three 1.05-second vOICe soundscapes play.
+It is then masked and followed by a four-image forced choice. The target,
+coherent decoy, and two structurally matched alternatives are always present.
