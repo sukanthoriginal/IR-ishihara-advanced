@@ -84,9 +84,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(json.dumps({"saved": True, "path": dest}).encode())
 
 
+class LocalTCPServer(socketserver.TCPServer):
+    # A packaged app may be closed and reopened immediately. macOS can retain
+    # the previous listener in TIME_WAIT briefly, so permit the same local port
+    # to be rebound without making the launcher appear broken.
+    allow_reuse_address = True
+
+
 if __name__ == "__main__":
     os.makedirs(TEST_DATA_DIR, exist_ok=True)
-    with socketserver.TCPServer(("127.0.0.1", PORT), Handler) as httpd:
+    with LocalTCPServer(("127.0.0.1", PORT), Handler) as httpd:
         print(f"Serving {ROOT} at http://localhost:{PORT}")
         print(f"POST /api/save-run writes into {TEST_DATA_DIR}")
         httpd.serve_forever()

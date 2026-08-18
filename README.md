@@ -8,8 +8,10 @@ performance with vOICe soundscapes generated from simulated infrared frames.
 - `web/`: the original point-localization task (3x3, 4x3 and 16x9).
 - `ishihara/`: an ambiguity-grammar task in which a coherent visible scaffold
   becomes a different glyph only when a diagnostic visible-colour or IR-audio
-  component is recovered. See [`ishihara/README.md`](ishihara/README.md) for
-  the experimental rationale and controls.
+  component is recovered. It includes a multimodal visible-versus-IR mode and
+  a silent visual-only baseline with matched timing. See
+  [`ishihara/README.md`](ishihara/README.md) for the experimental rationale and
+  controls.
 
 ## Generate IR-Ishihara stimuli
 

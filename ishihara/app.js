@@ -2,7 +2,7 @@ import {
   buildSchedule, calibratedStageSize, compactStageSize, fitAspectRatio,
   median, mulberry32,
   repeatedStimulusDurationMs, repeatedSweepPosition,
-} from './task_logic.mjs?v=simple-ui-3';
+} from './task_logic.mjs?v=simple-ui-4';
 
 const STIMULUS_ROOT = '../ishihara_stimuli/';
 const MASK_DURATION_MS = 220;
@@ -31,6 +31,9 @@ const targetAngleEl = document.getElementById('target-angle-deg');
 const calibrationFieldsEl = document.getElementById('calibration-fields');
 const sessionPresetEl = document.getElementById('session-preset');
 const sessionPresetNoteEl = document.getElementById('session-preset-note');
+const experimentModeEl = document.getElementById('experiment-mode');
+const experimentModeNoteEl = document.getElementById('experiment-mode-note');
+const conditionEl = document.getElementById('condition');
 const summaryEl = document.getElementById('summary');
 const saveStatusEl = document.getElementById('save-status');
 
@@ -72,9 +75,11 @@ window.addEventListener('resize', onWindowResize);
 new ResizeObserver(fitTrialStage).observe(stageShellEl);
 presentationModeEl.addEventListener('change', updatePresentationControls);
 sessionPresetEl.addEventListener('change', updateSessionPreset);
-document.documentElement.dataset.ishiharaAppVersion = 'simple-ui-3';
+experimentModeEl.addEventListener('change', updateExperimentMode);
+document.documentElement.dataset.ishiharaAppVersion = 'simple-ui-4';
 updatePresentationControls();
 updateSessionPreset();
+updateExperimentMode(false);
 startBtn.disabled = false;
 startBtn.textContent = 'Start session';
 
@@ -158,6 +163,16 @@ function updateSessionPreset() {
     : 'Uses the reserved stimulus bank and gives no answer feedback. Avoid practising these patterns beforehand.';
 }
 
+function updateExperimentMode(updateTrialCount = true) {
+  const visualOnly = experimentModeEl.value === 'visual-only';
+  experimentModeNoteEl.textContent = visualOnly
+    ? 'Presents complete visible-colour composites in silence for 3.65 seconds; IR discrimination is not tested.'
+    : 'Presents matched visible-colour and IR-audio composites; every trial has the matched auditory carrier.';
+  if (updateTrialCount) {
+    document.getElementById('num-trials').value = visualOnly ? 16 : 32;
+  }
+}
+
 async function startSession() {
   const participantId = document.getElementById('participant-id').value.trim();
   if (!participantId) {
@@ -181,7 +196,11 @@ async function startSession() {
       validateManifest(manifest);
     }
 
-    const condition = document.getElementById('condition').value;
+    const experimentMode = experimentModeEl.value;
+    const conditionOverride = conditionEl.value;
+    const condition = conditionOverride === 'use-experiment-mode'
+      ? experimentMode === 'visual-only' ? 'visual-composite-silent' : 'mixed'
+      : conditionOverride;
     if (conditionRequiresAudio(condition) && !manifest.audio_generated) {
       throw new Error('This stimulus bank was generated with --skip-audio. Regenerate it with raspivoice so every trial includes its matched auditory carrier.');
     }
@@ -220,6 +239,8 @@ async function startSession() {
     session = {
       participantId,
       arm: document.getElementById('arm').value,
+      experimentMode,
+      conditionOverride,
       condition,
       complexity,
       channelRecipe,
@@ -435,6 +456,7 @@ async function beginTrial(startMethod) {
   const scaffoldRecipe = currentTrial.stimulus.scaffold_channels.join(' + ');
   const visibleProbe = currentTrial.stimulus.visible_probe_channel;
   const conditionLabels = {
+    'visual-composite-silent': `Static ${scaffoldRecipe} scaffold + ${visibleProbe} probe; no audio`,
     'visual-composite': `Static ${scaffoldRecipe} scaffold + ${visibleProbe} probe; background IR carrier`,
     'ir-composite': `Static ${scaffoldRecipe} scaffold + IR probe audio`,
     'visible-only': `Static ${scaffoldRecipe} scaffold; background IR carrier only`,
@@ -583,6 +605,8 @@ function recordChoice(choiceGlyph, responsePosition, responseMethod) {
   trialLog.push({
     participant_id: session.participantId,
     arm: session.arm,
+    experiment_mode: session.experimentMode,
+    condition_override: session.conditionOverride,
     requested_condition: session.condition,
     requested_complexity: session.complexity,
     requested_channel_recipe: session.channelRecipe,
@@ -734,7 +758,9 @@ function recordChoice(choiceGlyph, responsePosition, responseMethod) {
 }
 
 function plateFileFor(trial) {
-  if (trial.condition === 'visual-composite') return trial.stimulus.visual_composite_png;
+  if (['visual-composite', 'visual-composite-silent'].includes(trial.condition)) {
+    return trial.stimulus.visual_composite_png;
+  }
   if (trial.condition === 'ir-only') return trial.stimulus.neutral_plate_png;
   if (['ir-composite', 'visible-only', 'ir-scrambled'].includes(trial.condition)) {
     return trial.stimulus.visible_components_png;
@@ -774,7 +800,7 @@ function audioRmsForTrial(trial) {
 }
 
 function activeChannelRecipe(trial) {
-  if (trial.condition === 'visual-composite') {
+  if (['visual-composite', 'visual-composite-silent'].includes(trial.condition)) {
     return trial.stimulus.visible_channels.join('+');
   }
   if (trial.condition === 'ir-composite') {
@@ -1135,7 +1161,8 @@ function finishBlock() {
   document.body.classList.remove('trial-active');
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   const rows = [
-    'visual-composite', 'ir-composite', 'visible-only', 'ir-only', 'ir-scrambled',
+    'visual-composite-silent', 'visual-composite', 'ir-composite',
+    'visible-only', 'ir-only', 'ir-scrambled',
   ]
     .map(condition => summarize(condition))
     .filter(Boolean);
@@ -1221,7 +1248,8 @@ async function saveResults() {
 
 function buildCsv(rows) {
   const columns = [
-    'participant_id', 'arm', 'requested_condition', 'requested_complexity',
+    'participant_id', 'arm', 'experiment_mode', 'condition_override',
+    'requested_condition', 'requested_complexity',
     'requested_channel_recipe', 'condition',
     'visual_presentation', 'audio_presentation', 'audio_content', 'split', 'mode',
     'presentation_mode', 'presentation_scale_mode', 'response_device',

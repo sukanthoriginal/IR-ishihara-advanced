@@ -52,11 +52,18 @@ counterbalanced order.
 | Condition | Static visual plate | Audio | Intended comparison |
 | --- | --- | --- | --- |
 | `mixed` | Schedules matched `visual-composite` and `ir-composite` trials | Condition-dependent | Primary within-stimulus visible-versus-IR comparison |
+| `visual-composite-silent` | Scaffold plus visibly coloured probe | None | Pure visual baseline with the same 3.65-second exposure, mask, choices, and scoring |
 | `visual-composite` | Scaffold plus visibly coloured probe | Background-only IR carrier, three sweeps | Upper comparator: `S + P` is fully visual without a sound-versus-silence cue |
 | `ir-composite` | Scaffold only | Aligned IR probe, three sweeps | Test: vision supplies `S`, audio supplies `P` |
 | `visible-only` | Scaffold only | Background-only IR carrier, three sweeps | Measures coherent decoy capture when `P` is absent |
 | `ir-only` | Neutral dot plate | Aligned IR probe, three sweeps | Tests whether the probe can be decoded without the visual scaffold |
 | `ir-scrambled` | Scaffold only | Spatially scrambled, energy-matched IR probe | Tests whether performance depends on probe geometry rather than audio energy |
+
+The setup screen exposes two participant-facing modes. **Multimodal** runs the
+paired `mixed` comparison. **Visual only** runs `visual-composite-silent`: it
+creates no audio source, but preserves the same 3.65-second static presentation
+and 220 ms mask before the four choices appear. The advanced condition selector
+can still override either mode for matched comparators and control blocks.
 
 ## Why it is an ambiguity-grammar task
 

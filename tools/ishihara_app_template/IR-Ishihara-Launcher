@@ -3,9 +3,10 @@ set -u
 
 contents_dir="${0:A:h:h}"
 runtime_dir="${contents_dir}/Resources/runtime"
-server_port="8001"
+server_port="8127"
 app_url="http://127.0.0.1:${server_port}/ishihara/"
 expected_title="<title>IR ambiguity-grammar curriculum</title>"
+expected_mode_control='<option value="visual-only">Visual only — visible colour with no audio</option>'
 chrome_app="/Applications/Google Chrome.app"
 server_log="/tmp/ir_ishihara_server.log"
 launcher_log="/tmp/ir_ishihara_launcher.log"
@@ -15,17 +16,17 @@ exec >>"$launcher_log" 2>&1
 print "$(/bin/date -u '+%Y-%m-%dT%H:%M:%SZ') launcher invoked"
 
 show_error() {
-  local message="${1//\\n/$'\n'}"
   /usr/bin/osascript \
     -e 'on run argv' \
     -e 'display dialog (item 1 of argv) buttons {"OK"} default button "OK" with icon stop' \
     -e 'end run' \
-    -- "$message"
+    -- "$1"
 }
 
 page_is_ready() {
-  /usr/bin/curl -fsS --max-time 1 "$app_url" 2>/dev/null \
-    | /usr/bin/grep -Fq "$expected_title"
+  local page
+  page="$(/usr/bin/curl -fsS --max-time 1 "$app_url" 2>/dev/null)" || return 1
+  [[ "$page" == *"$expected_title"* && "$page" == *"$expected_mode_control"* ]]
 }
 
 for required_path in \
@@ -33,7 +34,7 @@ for required_path in \
   "$runtime_dir/ishihara/index.html" \
   "$runtime_dir/ishihara_stimuli/manifest.json"; do
   if [[ ! -f "$required_path" ]]; then
-    show_error "The IR Ishihara application is incomplete.\n\nMissing: ${required_path}"
+    show_error $'The IR Ishihara application is incomplete.\n\nMissing: '"${required_path}"
     exit 1
   fi
 done
@@ -41,7 +42,7 @@ done
 listener_pid="$(/usr/sbin/lsof -tiTCP:"$server_port" -sTCP:LISTEN 2>/dev/null || true)"
 if [[ -n "$listener_pid" ]]; then
   if ! page_is_ready; then
-    show_error "Port ${server_port} is already being used by another service. Nothing was stopped.\n\nClose that service and try again."
+    show_error "Port ${server_port} is already being used by another service. Nothing was stopped."$'\n\n'"Close that service and try again."
     exit 1
   fi
 else
@@ -61,7 +62,7 @@ for _attempt in {1..24}; do
   /bin/sleep 0.25
 done
 if [[ "$server_ready" -ne 1 ]]; then
-  show_error "The IR Ishihara server did not become ready.\n\nSee ${server_log} for details."
+  show_error $'The IR Ishihara server did not become ready.\n\nSee '"${server_log}"$' for details.'
   exit 1
 fi
 

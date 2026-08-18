@@ -115,6 +115,16 @@ for (const trial of fullCurriculum) {
 assert.equal(transformationCounts.size, 16);
 assert.deepEqual(new Set(transformationCounts.values()), new Set([2]));
 
+const silentVisual = buildSchedule(manifest, {
+  split: 'train', condition: 'visual-composite-silent', complexity: 'curriculum',
+  channelRecipe: 'curriculum', numTrials: 16,
+}, mulberry32(44));
+assert.equal(silentVisual.length, 16);
+assert.ok(silentVisual.every(
+  trial => trial.condition === 'visual-composite-silent',
+));
+assert.equal(new Set(silentVisual.map(trial => trial.stimulus.glyph_id)).size, 16);
+
 const scrambled = buildSchedule(manifest, {
   split: 'train', condition: 'ir-scrambled', complexity: '2',
   channelRecipe: 'rgb-ir', numTrials: 5,

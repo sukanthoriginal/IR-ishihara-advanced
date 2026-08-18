@@ -245,7 +245,7 @@
   <div id="boot-error" class="hidden" role="alert"></div>
 
   <section id="setup-screen" class="screen">
-    <p class="setup-intro">Practise recognising shape information carried by visible colour and IR audio. Every trial includes a quiet IR background carrier; IR-probe trials add coherent spatial shape to that texture. Start with the recommended training setup.</p>
+    <p class="setup-intro">Choose the multimodal IR comparison or a silent visual-only baseline. Both modes preserve the same static presentation, mask, response choices, curriculum, and session controls.</p>
 
     <div class="setup-card">
       <div class="form-grid">
@@ -258,6 +258,13 @@
           <select id="session-preset">
             <option value="training">Training — familiar patterns with feedback</option>
             <option value="heldout-test">Held-out test — new patterns without feedback</option>
+          </select>
+        </div>
+        <div>
+          <label for="experiment-mode">Experiment mode</label>
+          <select id="experiment-mode">
+            <option value="multimodal">Multimodal — compare visible colour with IR audio</option>
+            <option value="visual-only">Visual only — visible colour with no audio</option>
           </select>
         </div>
         <div>
@@ -276,6 +283,7 @@
         </div>
       </div>
       <div id="session-preset-note" class="session-note">Uses the familiar stimulus bank and shows the correct answer after every trial.</div>
+      <div id="experiment-mode-note" class="session-note">Presents matched visible-colour and IR-audio composites; every trial has the matched auditory carrier.</div>
     </div>
 
     <input id="split" type="hidden" value="train">
@@ -284,13 +292,14 @@
     <details class="settings-panel">
       <summary>Advanced research controls <span>optional</span></summary>
       <div class="settings-body">
-        <p class="settings-copy">The main comparison is selected by default. Open these controls only for a specific experimental or control block. Every response set contains structurally matched alternatives; no universal “choose the option with more strokes” rule identifies the answer. The RGB plate remains static while only the IR soundscape sweeps three times.</p>
+        <p class="settings-copy">The experiment mode above is used by default. Select an override only for a specific matched comparator or control block. The RGB plate remains static in both modes. Every response set contains structurally matched alternatives; no universal “choose the option with more strokes” rule identifies the answer.</p>
         <div class="form-grid">
           <div>
             <label for="condition">Task comparison</label>
             <select id="condition">
-              <option value="mixed">Main experiment — compare visible colour with IR audio</option>
-              <option value="visual-composite">Visible-colour completion only</option>
+              <option value="use-experiment-mode">Use the selected experiment mode</option>
+              <option value="mixed">Override — matched visible colour versus IR audio</option>
+              <option value="visual-composite">Override — visible completion with background audio</option>
               <option value="ir-composite">IR-audio completion only</option>
               <option value="visible-only">Control — base shape without the missing clue</option>
               <option value="ir-only">Control — IR clue without the base shape</option>
@@ -410,6 +419,6 @@
     });
   })();
 </script>
-<script type="module" src="app.js?v=simple-ui-3"></script>
+<script type="module" src="app.js?v=simple-ui-4"></script>
 </body>
 </html>

@@ -52,11 +52,13 @@ class WebStaticTests(unittest.TestCase):
         self.assertEqual(metadata["CFBundleExecutable"], executable.name)
         self.assertIn('Resources/runtime', source)
         self.assertIn('Application Support/IR Ishihara Simulator/test_data', source)
-        self.assertIn('server_port="8001"', source)
+        self.assertIn('server_port="8127"', source)
+        self.assertIn('expected_mode_control=', source)
         self.assertIn('/ishihara/', source)
         self.assertNotIn(str(ROOT), source)
         self.assertNotIn('/Users/sukanth/Dev/Lossfunk', source)
         self.assertIn('IR_VOICE_TEST_DATA_DIR', server_source)
+        self.assertIn('allow_reuse_address = True', server_source)
         self.assertIn('ishihara_stimuli', packager)
         self.assertIn('codesign --verify', packager)
 
@@ -120,12 +122,20 @@ class WebStaticTests(unittest.TestCase):
         self.assertIn("const responseOnsetMs = await nextFrame()", self.javascript)
 
     def test_boot_is_cache_versioned_and_failure_is_visible(self):
-        self.assertIn('app.js?v=simple-ui-3', self.html)
+        self.assertIn('app.js?v=simple-ui-4', self.html)
         self.assertIn('id="boot-error"', self.html)
         self.assertIn(
-            "dataset.ishiharaAppVersion = 'simple-ui-3'",
+            "dataset.ishiharaAppVersion = 'simple-ui-4'",
             self.javascript,
         )
+
+    def test_visual_only_mode_is_silent_but_keeps_matched_timing(self):
+        self.assertIn('id="experiment-mode"', self.html)
+        self.assertIn('<option value="visual-only">', self.html)
+        self.assertIn("'visual-composite-silent'", self.javascript)
+        self.assertIn("visualOnly ? 16 : 32", self.javascript)
+        self.assertIn("currentTrial.hasAudioSweep ? AUDIO_SWEEP_REPETITIONS : 0", self.javascript)
+        self.assertIn("audio_presentation: currentTrial.hasAudioSweep", self.javascript)
 
     def test_rgb_is_static_while_three_audio_sweeps_share_one_timeline(self):
         self.assertIn("const AUDIO_SWEEP_REPETITIONS = 3", self.javascript)
