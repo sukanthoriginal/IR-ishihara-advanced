@@ -1,0 +1,63 @@
+#!/bin/zsh
+set -u
+
+contents_dir="${0:A:h:h}"
+runtime_dir="${contents_dir}/Resources/runtime"
+source "${runtime_dir}/shared/launcher_common.zsh"
+
+python_bin="__PYTHON_BIN__"
+server_port="8137"
+app_url="http://127.0.0.1:${server_port}/advanced/"
+expected_text="<title>Advanced IR Ishihara</title>"
+chrome_app="/Applications/Google Chrome.app"
+server_log="/tmp/advanced_ishihara_server.log"
+launcher_log="/tmp/advanced_ishihara_launcher.log"
+data_root="${HOME}/Library/Application Support/Advanced IR Ishihara"
+
+exec >>"$launcher_log" 2>&1
+print "$(/bin/date -u '+%Y-%m-%dT%H:%M:%SZ') launcher invoked"
+
+for required_path in \
+  "$python_bin" \
+  "$runtime_dir/server.py" \
+  "$runtime_dir/advanced/index.html" \
+  "$runtime_dir/advanced_ishihara/grammar_snapshot.json"; do
+  if [[ ! -f "$required_path" ]]; then
+    show_launcher_error $'The Advanced IR Ishihara application is incomplete.\n\nMissing: '"${required_path}"
+    exit 1
+  fi
+done
+
+if ! "$python_bin" -c 'import numpy; import PIL' >/dev/null 2>&1; then
+  show_launcher_error $'The packaged Python runtime cannot import NumPy and Pillow.\n\nRebuild the launcher with ADVANCED_ISHIHARA_PYTHON set to a compatible Python executable.'
+  exit 1
+fi
+
+listener_pid="$(/usr/sbin/lsof -tiTCP:"$server_port" -sTCP:LISTEN 2>/dev/null || true)"
+if [[ -z "$listener_pid" ]]; then
+  /bin/mkdir -p "$data_root/test_data" "$data_root/session_cache"
+  cd "$runtime_dir" || exit 1
+  if [[ -x "$runtime_dir/bin/raspivoice" ]]; then
+    export RASPIVOICE_BIN="$runtime_dir/bin/raspivoice"
+  fi
+  ADVANCED_ISHIHARA_TEST_DATA_DIR="$data_root/test_data" \
+  ADVANCED_ISHIHARA_SESSION_DIR="$data_root/session_cache" \
+  nohup "$python_bin" server.py "$server_port" >"$server_log" 2>&1 </dev/null &
+fi
+
+if ! wait_for_page "$app_url" "$expected_text" 40; then
+  show_launcher_error $'The Advanced IR Ishihara server did not become ready.\n\nSee '"${server_log}"$' for details.'
+  exit 1
+fi
+
+if [[ "${1:-}" == "--check-only" ]]; then
+  print "Advanced IR Ishihara launcher check passed: ${app_url}"
+  exit 0
+fi
+
+if [[ -d "$chrome_app" ]]; then
+  /usr/bin/open -na "Google Chrome" --args "--app=${app_url}" --start-fullscreen
+else
+  /usr/bin/open "$app_url"
+fi
+print "$(/bin/date -u '+%Y-%m-%dT%H:%M:%SZ') browser launch requested: ${app_url}"

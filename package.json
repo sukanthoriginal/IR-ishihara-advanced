@@ -1,0 +1,8 @@
+{
+  "name": "ir-ishihara-advanced",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/test_advanced_grammar.mjs && node tests/test_shared_runtime.mjs"
+  }
+}

@@ -1,115 +1,119 @@
-# IR Ishihara Advanced
+# Advanced IR Ishihara
 
-An advanced compositional-discrimination experiment in which a visible glyph
-scaffold can remain unchanged or become another plausible glyph when spatial
-information is supplied through an infrared vOICe soundscape.
+A standalone source-generalisation experiment for testing whether participants
+can use spatial information delivered through an infrared vOICe channel to
+disambiguate one-, two-, and three-glyph colour composites.
 
-## Project status
+This repository is now advanced-only. It contains no L2 localisation task and
+no legacy Ishihara application.
 
-The geometry grammar and source-wise train/test division are implemented and
-audited. The advanced plate generator, matched response foils, participant UI,
-audio cache, launcher, and final trial filters are not implemented yet.
+## What the experiment does
 
-The repository was seeded from
-[`IR-vOICe-simulator`](https://github.com/sukanthoriginal/IR-vOICe-simulator)
-to preserve its validated soundscape timing and experiment infrastructure.
-Inherited applications remain temporarily as migration material; they are not
-the Advanced Ishihara protocol and should not be used to collect advanced-study
-data.
+Each stimulus starts from a visible coloured-dot scaffold. A valid target is
+formed only by adding diagnostic strokes:
 
-## Current experimental model
+- in **visual-only** mode, those strokes are visible and the 3.65-second
+  presentation is silent;
+- in **paired visible-versus-IR** mode, the same diagnostic geometry is either
+  visible in the plate or carried by three left-to-right vOICe sweeps.
 
-The committed raw grammar defines:
+The visible comparator receives a background-only soundscape, while the IR
+condition receives the spatial diagnostic plus the same background texture.
+The two WAVs in every pair are RMS-matched, preventing overall loudness from
+revealing the condition or answer. The plate remains static; only the audio
+algorithm sweeps.
 
-- 27 distinguishable geometry classes
-- 19 transformable source geometries
-- 8 terminal target geometries
-- 71 valid addition-only changed mappings
-- 27 unchanged identity mappings
-- 98 raw atomic mappings
+After 3 × 1.05-second sweeps and two 250 ms inter-sweep intervals (3.65 seconds
+total), a 220 ms mask appears. The participant then chooses among four complete,
+plausible interpretations. One is the target, one is the fully unchanged source
+decoy, and two are close alternatives from the same source families.
 
-Training and testing are divided by complete source family. A source's identity
-and every reachable target always follow the same assignment; targets from one
-source are never split between training and held-out testing.
+Training sources provide trial feedback. Held-out test sources do not.
+
+## Run locally
+
+Install the Python dependencies:
+
+```bash
+python3 -m pip install -r requirements.txt
+```
+
+Start the local server:
+
+```bash
+python3 server.py 8137
+```
+
+Then open [http://127.0.0.1:8137/advanced/](http://127.0.0.1:8137/advanced/).
+Visual-only sessions work without the audio binary. Mixed sessions require the
+compiled `raspivoice` executable. Set its location when it is not in the usual
+local checkout:
+
+```bash
+RASPIVOICE_BIN=/path/to/raspivoice python3 server.py 8137
+```
+
+Click **Generate and preload block** before testing. The engine freezes the
+schedule, generates only that session's assets, validates every WAV, and waits
+until the browser has decoded all images and audio. Nothing is generated during
+a trial.
+
+## Build the macOS launcher
+
+```bash
+ADVANCED_ISHIHARA_PYTHON=/path/to/python3 \
+RASPIVOICE_BIN=/path/to/raspivoice \
+tools/package_advanced_app.sh
+```
+
+The launcher uses port 8137 and stores participant CSVs under
+`~/Library/Application Support/Advanced IR Ishihara/test_data/`. Generated
+session assets are stored separately in `session_cache/` and are never committed.
+
+## Source-wise train/test split
+
+All outcomes of a source stay in one assignment. A test source and its identity
+mapping are never used during training.
 
 | Assignment | Source families | Changed mappings | Identities | Total mappings |
 | --- | ---: | ---: | ---: | ---: |
 | Training | 13 | 47 | 13 | 60 |
 | Held-out test | 6 | 24 | 6 | 30 |
 
-The eight terminal identities remain tagged in the raw catalog as possible
-unchanged context but are not transformable source families.
+The complete grammar contains 27 geometry classes, 19 transformable sources,
+8 terminal targets, 71 addition-only transformations, and 27 identities. Its
+raw ordered one- through three-position space contains 950,894 sequences;
+930,455 contain at least one change. The session engine samples lazily rather
+than generating that catalog in advance.
 
 See [`advanced_ishihara/README.md`](advanced_ishihara/README.md) for the exact
-geometry graph and complete train/test tables.
-
-## Raw ordered possibility space
-
-A trial may contain one, two, or three ordered mapping positions. Position is
-meaningful and repetition is allowed.
-
-| Positions | Raw sequences |
-| ---: | ---: |
-| 1 | 98 |
-| 2 | 9,604 |
-| 3 | 941,192 |
-| **Total** | **950,894** |
-
-Of these sequences, 930,455 contain at least one change. The catalog is
-addressed lazily by stable IDs; importing it does not generate hundreds of
-thousands of plates or audio files.
-
-These are mathematical possibilities, not automatically valid experimental
-trials. The next filtering stage must validate geometry, construct equally
-plausible four-choice interpretations, balance difficulty, and separate main
-trials from explicit no-change catches.
+source tables and grammar mathematics.
 
 ## Repository layout
 
-- `advanced_ishihara/grammar.mjs` — canonical geometry graph, mappings,
-  source-family split, stable IDs, and lazy enumeration
-- `advanced_ishihara/README.md` — detailed protocol and source tables
-- `tests/test_advanced_grammar.mjs` — count and split invariants
-- `tools/export_advanced_catalog.mjs` — streaming audit/export utility
-- `ishihara/` and `generate_ishihara_stimuli.py` — temporary reference
-  implementation from the original Ishihara task
+- `advanced/` — participant UI and CSV logging
+- `advanced_ishihara/` — canonical grammar and lazy session generator
+- `shared/` — plate rasterisation, vOICe generation, timing, CSV, server, and
+  launcher utilities
+- `tests/` — grammar, generator, runtime, and static UI invariants
+- `tools/` — catalog audit/export and macOS packaging
 
-The inherited L2 localization files are scheduled for removal. Reusable audio,
-timing, plate, response, CSV, server, and launcher functionality will be
-extracted into a shared engine before the original Ishihara application is
-removed.
-
-## Audit the grammar
-
-Run the invariant tests:
+## Verify
 
 ```bash
-node tests/test_advanced_grammar.mjs
-```
-
-Inspect counts without materializing the catalog:
-
-```bash
+npm test
+python3 -m unittest tests.test_advanced_generator tests.test_advanced_web_static
 node tools/export_advanced_catalog.mjs --format=summary
 ```
 
-CSV and JSONL export stream the complete 950,894-entry raw catalog and should
-only be used when a full external audit is actually required.
-
-## Implementation sequence
-
-1. Remove inherited L2 localization code and assets.
-2. Extract reusable experiment infrastructure into `shared/`.
-3. Implement and validate the advanced geometry rasterizer.
-4. Build ambiguity-preserving foils and difficulty filters.
-5. Freeze a session schedule before generating and caching its audio.
-6. Build the advanced participant UI, logging schema, launcher, and controls.
-7. Remove the inherited original Ishihara application after feature parity.
-
 ## Scientific scope
 
-The intended measurements are accuracy, decoy capture, false alarms, and
-response time for visible-only and visible-plus-IR composites. A positive
-result could demonstrate behavioural use and generalisation of spatial
-information carried through the IR audio channel. It would not by itself
-establish a new colour quale, neural rewiring, or a specific neural mechanism.
+The engine measures accuracy, unchanged-decoy capture, and response time for
+visible and visible-plus-IR composites, including held-out source families. It
+is suitable for pilot work and apparatus iteration. Its current foil ranking
+and difficulty balance are explicit and tested, but should be frozen and
+preregistered before confirmatory data collection.
+
+A positive result can support behavioural use and generalisation of spatial
+information carried by the IR audio channel. It does not by itself establish a
+new colour quale, neural rewiring, or a specific neural mechanism.

@@ -1,10 +1,10 @@
 # Advanced IR-Ishihara grammar
 
-This directory contains the design layer for the advanced compositional
-experiment. It defines which stroke-addition transformations are possible and
-how entire source families are assigned to training or held-out testing. It
-does not yet claim that every raw combination has a valid dot plate, matched
-four-choice foils, or generated vOICe audio.
+This directory contains the canonical grammar and lazy session builder for the
+advanced compositional experiment. It defines which stroke-addition
+transformations are possible, assigns complete source families to training or
+held-out testing, rasterises selected combinations, constructs four-choice
+interpretations, and generates a frozen session's vOICe audio on demand.
 
 ## Geometry model
 
@@ -96,11 +96,25 @@ node tools/export_advanced_catalog.mjs --format=csv
 node tools/export_advanced_catalog.mjs --format=jsonl
 ```
 
-## Next filtering stage
+## Implemented session filter
 
-The raw catalog is intentionally broader than the final experiment. A later
-filter must verify raster containment, exclude alias ambiguity, require at
-least one changed mapping for main trials, construct equally plausible foils,
-balance difficulty, and reserve identity-only sequences as explicit catch
-controls. Audio should be generated and cached only for a frozen session
-schedule, never for all 950,894 sequences.
+The raw catalog remains intentionally broader than any one block. The current
+session engine:
+
+- validates that the drawn segment containment exactly matches all 71 grammar
+  transformations;
+- samples ordered one-, two-, and three-position trials from only the selected
+  source assignment;
+- requires at least one change on every main trial while allowing unchanged
+  positions as within-composite context;
+- supplies the target, the complete unchanged-source decoy, and the two closest
+  same-family alternatives;
+- generates and validates only the frozen session's assets;
+- pairs every visible composite with the corresponding IR composite in mixed
+  mode; and
+- RMS-matches the diagnostic and background-carrier WAVs within each pair.
+
+The final confirmatory protocol should freeze the foil-ranking rule, establish
+difficulty strata from pilot data, and decide whether identity-only sequences
+are included as explicit catch trials. The raw grammar and stable IDs make those
+filters auditable without ever pre-generating all 950,894 possibilities.

@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Advanced IR Ishihara</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d0e10; --panel:#17191d; --line:#343840; --muted:#9ca3ad; --ink:#f4f5f7; --accent:#67a6ff; --good:#5ed28a; --bad:#ff7474; }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; background:var(--bg); color:var(--ink); font:16px/1.4 system-ui,-apple-system,sans-serif; }
+    button, input, select { font:inherit; }
+    button { border:1px solid var(--line); border-radius:8px; background:#252932; color:var(--ink); padding:.72rem 1rem; cursor:pointer; }
+    button.primary { background:#1768d7; border-color:#2b7de9; }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    .page { width:min(900px, calc(100% - 32px)); margin:0 auto; padding:32px 0 56px; }
+    h1 { margin:0 0 8px; font-size:clamp(1.7rem,4vw,2.4rem); }
+    h2 { margin-top:0; }
+    .lede, .muted { color:var(--muted); }
+    .panel { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:22px; margin-top:22px; }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+    label { display:grid; gap:6px; color:#d8dbe0; }
+    input, select { width:100%; border:1px solid var(--line); border-radius:7px; background:#0f1115; color:var(--ink); padding:.65rem .72rem; }
+    .full { grid-column:1/-1; }
+    .actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:20px; }
+    .status { color:var(--muted); }
+    .status.error { color:var(--bad); }
+    .status.good { color:var(--good); }
+    .hidden { display:none !important; }
+    #trial-screen { min-height:100vh; padding:12px; }
+    .trial-header { display:grid; grid-template-columns:1fr auto 1fr; align-items:start; gap:12px; color:var(--muted); font-size:.9rem; }
+    .trial-header .center { text-align:center; }
+    .trial-header .right { text-align:right; }
+    #stage-shell { position:relative; margin:24px auto 18px; background:#202224; border:1px solid #454950; overflow:hidden; }
+    #stimulus-image, #mask { position:absolute; inset:0; width:100%; height:100%; object-fit:fill; }
+    #mask { background:radial-gradient(circle at 20% 30%,#42454a 0 2px,transparent 3px),radial-gradient(circle at 70% 60%,#36393d 0 2px,transparent 3px),#27292c; background-size:19px 19px,23px 23px; }
+    #ready-overlay { position:absolute; inset:0; display:grid; place-items:center; background:#181a1dd9; text-align:center; padding:20px; }
+    #ready-overlay button { margin-top:10px; }
+    #choices { width:min(820px,95vw); margin:0 auto; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+    .choice { position:relative; min-height:112px; background:#f0f1f3; border-color:#d8d9dc; padding:10px; }
+    .choice img { display:block; max-width:100%; height:90px; margin:auto; object-fit:contain; image-rendering:pixelated; }
+    .choice .number { position:absolute; left:9px; top:7px; color:#222; font-weight:700; }
+    #feedback { min-height:28px; text-align:center; font-weight:650; margin-top:10px; }
+    .summary-table { width:100%; border-collapse:collapse; }
+    .summary-table th,.summary-table td { padding:9px; border-bottom:1px solid var(--line); text-align:left; }
+    details { margin-top:14px; }
+    @media (max-width:650px) { .grid { grid-template-columns:1fr; } .full { grid-column:auto; } .trial-header { grid-template-columns:1fr auto; } .trial-header .center { display:none; } }
+  </style>
+</head>
+<body>
+  <main id="setup-screen" class="page">
+    <h1>Advanced IR Ishihara</h1>
+    <p class="lede">A source-family generalisation task. The visible scaffold stays static; only the IR information is swept through three vOICe soundscapes.</p>
+
+    <section class="panel">
+      <h2>Prepare block</h2>
+      <div class="grid">
+        <label>Participant ID<input id="participant-id" autocomplete="off" required></label>
+        <label>Source assignment<select id="split"><option value="train">Training sources</option><option value="test">Held-out test sources</option></select></label>
+        <label>Mode<select id="mode"><option value="visual-only">Visual-only baseline — silent</option><option value="mixed">Paired visible versus IR</option></select></label>
+        <label>Trials<input id="trial-count" type="number" min="4" max="96" step="2" value="12"></label>
+        <label>Response<select id="response-device"><option value="keyboard">Keyboard 1–4</option><option value="pointer">Pointer / click</option></select></label>
+        <label>Presentation<select id="presentation"><option value="expanded">Expanded — preserve 178:64</option><option value="compact">Compact native 712×256</option><option value="calibrated">Calibrated apparent size</option></select></label>
+        <label>Session seed<input id="seed" type="number" min="0" value="1729"></label>
+        <label>Display ID<input id="display-id" value="lab-monitor-01"></label>
+      </div>
+      <details id="calibration-fields">
+        <summary>Calibration</summary>
+        <div class="grid" style="margin-top:14px">
+          <label>Physical display width (cm)<input id="display-width-cm" type="number" min="1" step="0.1"></label>
+          <label>Viewing distance (cm)<input id="viewing-distance-cm" type="number" min="1" step="0.1"></label>
+          <label>Target horizontal angle (°)<input id="target-angle-deg" type="number" min="1" max="170" step="0.1" value="50"></label>
+        </div>
+      </details>
+      <div class="actions">
+        <button id="prepare-btn" class="primary">Generate and preload block</button>
+        <span id="prepare-status" class="status">No assets loaded.</span>
+      </div>
+      <div id="prepared-panel" class="actions hidden">
+        <button id="start-btn" class="primary">Start block</button>
+        <span id="prepared-summary" class="status"></span>
+      </div>
+    </section>
+  </main>
+
+  <main id="trial-screen" class="hidden">
+    <header class="trial-header">
+      <div id="condition-status"></div>
+      <div class="center">Which interpretation did the complete multimodal stimulus specify?</div>
+      <div id="trial-status" class="right"></div>
+    </header>
+    <div id="stage-shell">
+      <img id="stimulus-image" class="hidden" alt="Static coloured dot plate">
+      <div id="mask" class="hidden" aria-hidden="true"></div>
+      <div id="ready-overlay">
+        <div><strong id="ready-title">Ready</strong><br><span id="ready-copy" class="muted"></span><br><button id="ready-btn">Start trial</button></div>
+      </div>
+    </div>
+    <div id="choices" class="hidden"></div>
+    <div id="feedback"></div>
+  </main>
+
+  <main id="end-screen" class="page hidden">
+    <h1>Block complete</h1>
+    <section class="panel">
+      <div id="summary"></div>
+      <div class="actions">
+        <button id="save-btn" class="primary">Save CSV</button>
+        <button id="new-btn">New block</button>
+        <span id="save-status" class="status"></span>
+      </div>
+    </section>
+  </main>
+
+  <div id="boot-error" class="page hidden status error"></div>
+  <script type="module" src="app.js?v=advanced-1"></script>
+</body>
+</html>
