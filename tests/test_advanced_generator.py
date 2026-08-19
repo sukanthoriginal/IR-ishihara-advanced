@@ -1,5 +1,6 @@
 import math
 import random
+import subprocess
 import tempfile
 import unittest
 import wave
@@ -10,6 +11,7 @@ import numpy as np
 from PIL import Image
 
 from advanced_ishihara import generate_session as generator
+from shared import soundscape
 from shared.plate import (
     AUDIO_HEIGHT,
     AUDIO_WIDTH,
@@ -129,6 +131,30 @@ class AdvancedGeneratorTests(unittest.TestCase):
                 generator.glyph_count_quotas(23, str(glyph_count), 4),
                 expected,
             )
+
+    def test_lightweight_plan_reports_exact_runnable_catalog_counts(self):
+        self.assertEqual(
+            generator.eligible_transformation_counts(self.grammar, "train"),
+            {1: 37, 2: 3431, 3: 213803},
+        )
+        self.assertEqual(
+            generator.eligible_transformation_counts(self.grammar, "test"),
+            {1: 19, 2: 864, 3: 26784},
+        )
+        plan = generator.plan_session({
+            "split": "test",
+            "signalMode": "visual",
+            "baseStimulusCount": 12,
+            "glyphComposition": "automatic",
+            "seed": 8127,
+        })
+        self.assertEqual(plan["eligible_transformation_count"], 27667)
+        self.assertEqual(len(plan["base_specs"]), 12)
+        self.assertEqual(sum(plan["glyph_count_quotas"].values()), 12)
+        self.assertEqual(
+            len({item["transformationSignature"] for item in plan["base_specs"]}),
+            12,
+        )
 
     def test_forced_one_glyph_high_count_cycles_before_balanced_reuse(self):
         families = [
@@ -762,6 +788,312 @@ class AdvancedGeneratorTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "silent soundscape"):
                 apply_carrier_referenced_gain((carrier, probe), carrier)
 
+    def test_validate_wav_requires_the_full_pcm_payload(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "truncated.wav"
+            self._write_wav(path, 200)
+            with path.open("r+b") as wav_file:
+                wav_file.truncate(44 + 1_013 * 2 * 2)
+            with self.assertRaisesRegex(
+                RuntimeError, "incomplete soundscape payload",
+            ):
+                soundscape.validate_wav(path)
+
+    def test_soundscape_waits_for_full_wav_then_atomically_promotes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            destination = root / "probe.wav"
+            processes = []
+
+            class CompletingProcess:
+                def __init__(inner_self, command, stderr):
+                    inner_self.partial = Path(
+                        command[command.index("-o") + 1]
+                    )
+                    inner_self.stderr = stderr
+                    inner_self.returncode = None
+                    inner_self.poll_count = 0
+                    inner_self.terminated = False
+
+                def poll(inner_self):
+                    inner_self.poll_count += 1
+                    if inner_self.poll_count == 1:
+                        self._write_wav(
+                            inner_self.partial, 200, frame_count=1_013,
+                        )
+                    elif inner_self.poll_count == 2:
+                        self._write_wav(inner_self.partial, 200)
+                    return inner_self.returncode
+
+                def terminate(inner_self):
+                    # Publication must happen only after the complete private
+                    # attempt has survived process shutdown and revalidation.
+                    soundscape.validate_wav(inner_self.partial)
+                    self.assertFalse(destination.exists())
+                    inner_self.terminated = True
+                    inner_self.returncode = -15
+
+                def wait(inner_self, timeout=None):
+                    self.assertIsNotNone(inner_self.returncode)
+                    return inner_self.returncode
+
+                def kill(inner_self):
+                    inner_self.returncode = -9
+
+            def fake_popen(command, **kwargs):
+                process = CompletingProcess(command, kwargs["stderr"])
+                processes.append(process)
+                return process
+
+            with (
+                patch.object(soundscape.subprocess, "Popen", side_effect=fake_popen),
+                patch.object(soundscape.time, "sleep", return_value=None),
+            ):
+                soundscape._generate_once(
+                    root / "input.png",
+                    destination,
+                    root / "raspivoice",
+                    root,
+                )
+
+            self.assertEqual(len(processes), 1)
+            process = processes[0]
+            self.assertTrue(process.terminated)
+            self.assertGreaterEqual(process.poll_count, 3)
+            self.assertNotEqual(process.partial, destination)
+            self.assertTrue(process.partial.name.endswith(".partial.wav"))
+            self.assertFalse(process.partial.exists())
+            soundscape.validate_wav(destination)
+
+    def test_soundscape_rejects_natural_nonzero_exit_after_validation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            destination = root / "probe.wav"
+            processes = []
+
+            class LateExitProcess:
+                def __init__(inner_self, command, stderr):
+                    inner_self.partial = Path(
+                        command[command.index("-o") + 1]
+                    )
+                    self._write_wav(inner_self.partial, 200)
+                    inner_self.poll_count = 0
+                    inner_self.stderr = stderr
+
+                def poll(inner_self):
+                    inner_self.poll_count += 1
+                    if inner_self.poll_count == 1:
+                        return None
+                    inner_self.stderr.write(b"late renderer failure\n")
+                    inner_self.stderr.flush()
+                    return 9
+
+                def terminate(inner_self):
+                    self.fail("a naturally exited process must not be terminated")
+
+                def wait(inner_self, timeout=None):
+                    return 9
+
+                def kill(inner_self):
+                    self.fail("a naturally exited process must not be killed")
+
+            def fake_popen(command, **kwargs):
+                process = LateExitProcess(command, kwargs["stderr"])
+                processes.append(process)
+                return process
+
+            with patch.object(
+                soundscape.subprocess, "Popen", side_effect=fake_popen,
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, "status 9.*before publication.*late renderer failure",
+                ):
+                    soundscape._generate_once(
+                        root / "input.png",
+                        destination,
+                        root / "raspivoice",
+                        root,
+                    )
+
+            process = processes[0]
+            self.assertEqual(process.poll_count, 2)
+            self.assertFalse(process.partial.exists())
+            self.assertFalse(destination.exists())
+
+    def test_soundscape_enospc_reaps_child_and_publishes_nothing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            destination = root / "probe.wav"
+            processes = []
+
+            class CompleteRunningProcess:
+                def __init__(inner_self, command):
+                    inner_self.partial = Path(
+                        command[command.index("-o") + 1]
+                    )
+                    self._write_wav(inner_self.partial, 200)
+                    inner_self.returncode = None
+                    inner_self.terminated = False
+                    inner_self.waited = False
+
+                def poll(inner_self):
+                    return inner_self.returncode
+
+                def terminate(inner_self):
+                    inner_self.terminated = True
+                    inner_self.returncode = -15
+
+                def wait(inner_self, timeout=None):
+                    inner_self.waited = True
+                    return inner_self.returncode
+
+                def kill(inner_self):
+                    inner_self.returncode = -9
+
+            def fake_popen(command, **_kwargs):
+                process = CompleteRunningProcess(command)
+                processes.append(process)
+                return process
+
+            with (
+                patch.object(soundscape.subprocess, "Popen", side_effect=fake_popen),
+                patch.object(
+                    soundscape.os,
+                    "replace",
+                    side_effect=OSError(28, "No space left on device"),
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, "soundscape I/O failed.*No space left on device",
+                ):
+                    soundscape._generate_once(
+                        root / "input.png",
+                        destination,
+                        root / "raspivoice",
+                        root,
+                    )
+
+            process = processes[0]
+            self.assertTrue(process.terminated)
+            self.assertTrue(process.waited)
+            self.assertFalse(process.partial.exists())
+            self.assertFalse(destination.exists())
+
+    def test_soundscape_timeout_kills_process_and_cleans_partial(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            destination = root / "probe.wav"
+            processes = []
+
+            class StuckProcess:
+                def __init__(inner_self, command, stderr):
+                    inner_self.partial = Path(
+                        command[command.index("-o") + 1]
+                    )
+                    inner_self.returncode = None
+                    inner_self.terminated = False
+                    inner_self.killed = False
+                    stderr.write(b"Cannot open screen.\n")
+                    stderr.flush()
+
+                def poll(inner_self):
+                    return inner_self.returncode
+
+                def terminate(inner_self):
+                    inner_self.terminated = True
+
+                def wait(inner_self, timeout=None):
+                    if inner_self.returncode is None:
+                        raise subprocess.TimeoutExpired("raspivoice", timeout)
+                    return inner_self.returncode
+
+                def kill(inner_self):
+                    inner_self.killed = True
+                    inner_self.returncode = -9
+
+            def fake_popen(command, **kwargs):
+                process = StuckProcess(command, kwargs["stderr"])
+                processes.append(process)
+                return process
+
+            with (
+                patch.object(soundscape.subprocess, "Popen", side_effect=fake_popen),
+                patch.object(soundscape, "RASPIVOICE_MAX_WAIT_S", 0),
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, "timed out.*Cannot open screen",
+                ):
+                    soundscape._generate_once(
+                        root / "input.png",
+                        destination,
+                        root / "raspivoice",
+                        root,
+                    )
+
+            process = processes[0]
+            self.assertTrue(process.terminated)
+            self.assertTrue(process.killed)
+            self.assertFalse(process.partial.exists())
+            self.assertFalse(destination.exists())
+
+    def test_soundscape_nonzero_exit_preserves_destination_and_cleans_partial(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            destination = root / "probe.wav"
+            destination.write_bytes(b"existing destination")
+            processes = []
+
+            class FailedProcess:
+                def __init__(inner_self, command, stderr):
+                    inner_self.partial = Path(
+                        command[command.index("-o") + 1]
+                    )
+                    inner_self.returncode = None
+                    inner_self.polled = False
+                    inner_self.stderr = stderr
+
+                def poll(inner_self):
+                    if not inner_self.polled:
+                        inner_self.polled = True
+                        self._write_wav(
+                            inner_self.partial, 200, frame_count=1_013,
+                        )
+                        inner_self.stderr.write(b"encoder failed\n")
+                        inner_self.stderr.flush()
+                        inner_self.returncode = 7
+                    return inner_self.returncode
+
+                def terminate(inner_self):
+                    self.fail("an exited process must not be terminated")
+
+                def wait(inner_self, timeout=None):
+                    return inner_self.returncode
+
+                def kill(inner_self):
+                    self.fail("an exited process must not be killed")
+
+            def fake_popen(command, **kwargs):
+                process = FailedProcess(command, kwargs["stderr"])
+                processes.append(process)
+                return process
+
+            with patch.object(
+                soundscape.subprocess, "Popen", side_effect=fake_popen,
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, "status 7.*encoder failed",
+                ):
+                    soundscape._generate_once(
+                        root / "input.png",
+                        destination,
+                        root / "raspivoice",
+                        root,
+                    )
+
+            process = processes[0]
+            self.assertFalse(process.partial.exists())
+            self.assertEqual(destination.read_bytes(), b"existing destination")
+
     @staticmethod
     def _schedule_stimulus(index, score):
         choice_ids = [f"s-{index}-choice-{position}" for position in range(1, 5)]
@@ -791,8 +1123,8 @@ class AdvancedGeneratorTests(unittest.TestCase):
         cls._write_wav(wav_path, amplitude)
 
     @staticmethod
-    def _write_wav(path, amplitude):
-        samples = np.full(EXPECTED_WAV_FRAMES * 2, amplitude, dtype="<i2")
+    def _write_wav(path, amplitude, frame_count=EXPECTED_WAV_FRAMES):
+        samples = np.full(frame_count * 2, amplitude, dtype="<i2")
         with wave.open(str(path), "wb") as wav_file:
             wav_file.setnchannels(2)
             wav_file.setsampwidth(2)

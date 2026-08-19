@@ -66,10 +66,36 @@ experimental blocks:
 - automatic balanced one-/two-/three-glyph composition, or a forced glyph
   count, under **Advanced block settings**.
 
-The reproducible run code recreates the selected stimuli and schedule. The
-automatic glyph policy divides base stimuli as evenly as possible across one,
-two, and three glyphs; a seeded remainder rule makes the preview and generated
-manifest agree for counts not divisible by three.
+The requested run code deterministically creates the first candidate. If that
+candidate exceeds the participant's repeat ceiling, the history guard redraws
+and records a different effective run code. Exact recreation therefore requires
+the same settings and participant-history state, including the logged effective
+code and redraw count. The automatic glyph policy divides base stimuli as
+evenly as possible across one, two, and three glyphs; a seeded remainder rule
+makes the preview and generated manifest agree for counts not divisible by
+three.
+
+Participant ID and the chosen CSV results directory are remembered locally.
+Before assets are rendered, the server draws the requested candidate normally
+and compares its ordered transformation signatures with that participant's
+exposure history. A candidate is accepted when no more than 10% of its base
+stimulus slots are repeats; only candidates above that ceiling are redrawn.
+The pre-session audit reports the exact eligible pool for the current split and
+glyph setting, prior-history coverage, historical and within-candidate repeats,
+the requested/effective run codes, and any redraw count. The deliberate second
+presentation in Repeated-pair mode is not counted against this ceiling.
+
+An exposure enters history when its plate is actually shown, even if the trial
+is interrupted. Generating an unused block does not mark its puzzles as seen.
+History starts with exposures recorded by this version; older CSV files are not
+silently imported.
+
+Immediately before Start, the server rechecks current history and atomically
+reserves that participant for the block. This prevents two tabs from both
+passing against the same stale history. The reservation is renewed at each
+actual stimulus onset, released after exposure-history synchronization, and
+expires after 60 minutes without activity if a tab is abandoned. The
+reservation itself never records unshown candidate transformations as exposures.
 
 Difficulty is an auditable structural estimate, not a claim about participant
 performance. Its versioned score records glyph load, diagnostic subtlety, foil
@@ -120,9 +146,13 @@ RASPIVOICE_BIN=/path/to/raspivoice \
 tools/package_advanced_app.sh
 ```
 
-The launcher uses port 8137 and stores participant CSVs under
-`~/Library/Application Support/Advanced IR Ishihara/test_data/`. Generated
-session assets are stored separately in `session_cache/` and are never committed.
+The launcher uses port 8137. Its initial CSV directory and fixed participant
+history database are under
+`~/Library/Application Support/Advanced IR Ishihara/test_data/`; the CSV
+directory can be changed and is remembered. Generated session assets are stored
+separately in `session_cache/`. In a source checkout, the corresponding paths
+are `test_data/` and `advanced_sessions/`. These local participant and generated
+files are ignored by Git and are never committed.
 
 ## Source-wise train/test split
 
@@ -156,6 +186,6 @@ source tables and grammar mathematics.
 
 ```bash
 npm test
-python3 -m unittest tests.test_advanced_generator tests.test_advanced_web_static
+python3 -m unittest tests.test_advanced_generator tests.test_advanced_web_static tests.test_local_participant_state
 node tools/export_advanced_catalog.mjs --format=summary
 ```

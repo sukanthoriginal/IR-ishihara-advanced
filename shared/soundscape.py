@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import math
 import os
+import signal
 import subprocess
+import tempfile
 import time
+import uuid
 import wave
 from pathlib import Path
 
@@ -22,6 +25,8 @@ SAMPLES_PER_COLUMN = SAMPLE_COUNT // AUDIO_WIDTH
 EXPECTED_WAV_FRAMES = SAMPLE_COUNT
 RASPIVOICE_MAX_WAIT_S = 8.0
 RASPIVOICE_POLL_INTERVAL_S = 0.02
+RASPIVOICE_STOP_WAIT_S = 2.0
+RASPIVOICE_DIAGNOSTIC_BYTES = 4_096
 CARRIER_TARGET_RMS_INT16 = 185.0
 PEAK_CEILING_DBFS = -3.0
 AUDIO_NORMALIZATION_METHOD = "carrier-referenced-shared-gain-v1"
@@ -64,7 +69,11 @@ def validate_wav(path: Path) -> dict[str, int]:
                 "sample_rate_hz": wav_file.getframerate(),
                 "frame_count": wav_file.getnframes(),
             }
-    except (EOFError, wave.Error) as error:
+            expected_payload_bytes = (
+                EXPECTED_WAV_FRAMES * CHANNELS * BYTES_PER_SAMPLE
+            )
+            payload_bytes = len(wav_file.readframes(EXPECTED_WAV_FRAMES))
+    except (EOFError, OSError, wave.Error) as error:
         raise RuntimeError(f"invalid WAV file: {path}") from error
 
     expected = {
@@ -77,6 +86,11 @@ def validate_wav(path: Path) -> dict[str, int]:
         raise RuntimeError(
             f"unexpected soundscape metadata for {path}: "
             f"expected {expected}, received {metadata}"
+        )
+    if payload_bytes != expected_payload_bytes:
+        raise RuntimeError(
+            f"incomplete soundscape payload for {path}: expected "
+            f"{expected_payload_bytes} PCM bytes, received {payload_bytes}"
         )
     return metadata
 
@@ -219,7 +233,12 @@ def generate_soundscape(
             validate_wav(wav_path)
             return
         except RuntimeError:
-            wav_path.unlink()
+            try:
+                wav_path.unlink()
+            except OSError as error:
+                raise RuntimeError(
+                    f"could not remove invalid soundscape {wav_path}: {error}"
+                ) from error
 
     if not raspivoice_available(raspivoice_bin):
         raise RuntimeError(
@@ -227,7 +246,12 @@ def generate_soundscape(
             f"to an executable binary; checked {raspivoice_bin}"
         )
 
-    shim_dir = ensure_aplay_shim(cache_root)
+    try:
+        shim_dir = ensure_aplay_shim(cache_root)
+    except OSError as error:
+        raise RuntimeError(
+            f"could not prepare soundscape runtime in {cache_root}: {error}"
+        ) from error
     last_error: RuntimeError | None = None
     for _attempt in range(retries):
         try:
@@ -245,38 +269,151 @@ def _generate_once(
     raspivoice_bin: Path,
     shim_dir: Path,
 ) -> None:
-    wav_path.unlink(missing_ok=True)
+    partial_path = wav_path.with_name(
+        f".{wav_path.name}.{uuid.uuid4().hex}.partial.wav"
+    )
     environment = os.environ.copy()
     environment["PATH"] = f"{shim_dir}:{environment.get('PATH', '')}"
-    process = subprocess.Popen(
-        [
-            str(raspivoice_bin),
-            "-s0",
-            "-i", str(png_path),
-            "-o", str(wav_path),
-            "-r", str(AUDIO_HEIGHT),
-            "-c", str(AUDIO_WIDTH),
-            "-t", str(SWEEP_DURATION_S),
-            "-Z", str(SAMPLE_RATE_HZ),
-            "--no_record",
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        env=environment,
-    )
-
-    deadline = time.monotonic() + RASPIVOICE_MAX_WAIT_S
-    while time.monotonic() < deadline:
-        if wav_path.exists() and wav_path.stat().st_size > 44:
-            break
-        time.sleep(RASPIVOICE_POLL_INTERVAL_S)
-
-    process.terminate()
+    process = None
     try:
-        process.wait(timeout=2)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait()
+        with tempfile.TemporaryFile() as diagnostic_stream:
+            try:
+                process = subprocess.Popen(
+                    [
+                        str(raspivoice_bin),
+                        "-s0",
+                        "-i", str(png_path),
+                        "-o", str(partial_path),
+                        "-r", str(AUDIO_HEIGHT),
+                        "-c", str(AUDIO_WIDTH),
+                        "-t", str(SWEEP_DURATION_S),
+                        "-Z", str(SAMPLE_RATE_HZ),
+                        "--no_record",
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=diagnostic_stream,
+                    env=environment,
+                )
+                deadline = time.monotonic() + RASPIVOICE_MAX_WAIT_S
+                last_validation_error = None
+                while True:
+                    try:
+                        validate_wav(partial_path)
+                    except RuntimeError as error:
+                        last_validation_error = error
+                    else:
+                        return_code = process.poll()
+                        if return_code is not None and return_code != 0:
+                            raise RuntimeError(
+                                f"raspivoice exited with status {return_code}"
+                            )
+                        break
 
-    if not wav_path.exists():
-        raise RuntimeError(f"raspivoice did not create {wav_path.name}")
+                    return_code = process.poll()
+                    if return_code is not None:
+                        detail = (
+                            f": {last_validation_error}"
+                            if last_validation_error is not None else ""
+                        )
+                        raise RuntimeError(
+                            f"raspivoice exited with status {return_code} before "
+                            f"writing a complete {wav_path.name}{detail}"
+                        )
+                    if time.monotonic() >= deadline:
+                        detail = (
+                            f": {last_validation_error}"
+                            if last_validation_error is not None else ""
+                        )
+                        raise RuntimeError(
+                            f"raspivoice timed out before writing a complete "
+                            f"{wav_path.name}{detail}"
+                        )
+                    time.sleep(RASPIVOICE_POLL_INTERVAL_S)
+
+                termination_requested, final_return_code = _stop_process(process)
+                process = None
+                accepted_signal_codes = {-signal.SIGTERM, -signal.SIGKILL}
+                if (
+                    final_return_code not in (None, 0)
+                    and not (
+                        termination_requested
+                        and final_return_code in accepted_signal_codes
+                    )
+                ):
+                    raise RuntimeError(
+                        f"raspivoice exited with status {final_return_code} "
+                        f"after writing {wav_path.name}, before publication"
+                    )
+                validate_wav(partial_path)
+                os.replace(partial_path, wav_path)
+            except RuntimeError as error:
+                cleanup_error = None
+                if process is not None:
+                    cleanup_error = _cleanup_process(process)
+                    process = None
+                diagnostics = _bounded_process_diagnostics(diagnostic_stream)
+                additions = []
+                if diagnostics:
+                    additions.append(f"raspivoice: {diagnostics}")
+                if cleanup_error:
+                    additions.append(f"cleanup: {cleanup_error}")
+                if additions:
+                    raise RuntimeError(
+                        f"{error}; {'; '.join(additions)}"
+                    ) from error
+                raise
+    except OSError as error:
+        raise RuntimeError(
+            f"soundscape I/O failed for {wav_path.name}: {error}"
+        ) from error
+    finally:
+        if process is not None:
+            _cleanup_process(process)
+        try:
+            partial_path.unlink(missing_ok=True)
+        except OSError:
+            # Cleanup must never hide the actionable generation failure.
+            pass
+
+
+def _stop_process(process: subprocess.Popen) -> tuple[bool, int | None]:
+    """Reap raspivoice, escalating only when its UI loop will not stop."""
+    return_code = process.poll()
+    if return_code is not None:
+        return False, process.wait()
+    try:
+        process.terminate()
+    except ProcessLookupError:
+        return False, process.wait()
+    try:
+        return True, process.wait(timeout=RASPIVOICE_STOP_WAIT_S)
+    except subprocess.TimeoutExpired:
+        try:
+            process.kill()
+        except ProcessLookupError:
+            return False, process.wait()
+        return True, process.wait()
+
+
+def _cleanup_process(process: subprocess.Popen) -> str | None:
+    """Best-effort process cleanup that cannot mask the generation error."""
+    try:
+        _stop_process(process)
+    except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+        return str(error)
+    return None
+
+
+def _bounded_process_diagnostics(stream) -> str:
+    """Return a bounded, single-line tail from raspivoice stderr."""
+    try:
+        stream.flush()
+        stream.seek(0, os.SEEK_END)
+        size = stream.tell()
+        stream.seek(max(0, size - RASPIVOICE_DIAGNOSTIC_BYTES))
+        diagnostic_bytes = stream.read(RASPIVOICE_DIAGNOSTIC_BYTES)
+    except (OSError, ValueError):
+        return ""
+    return " ".join(
+        diagnostic_bytes.decode("utf-8", errors="replace").split()
+    )

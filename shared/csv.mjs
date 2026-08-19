@@ -19,14 +19,20 @@ export function safeFilenamePart(value) {
   return String(value).replace(/[^A-Za-z0-9_.-]+/g, '_') || 'participant';
 }
 
-export async function saveCsv({ rows, columns, filename, statusElement = null }) {
+export async function saveCsv({
+  rows,
+  columns,
+  filename,
+  statusElement = null,
+  requestFields = {},
+}) {
   const csv = buildCsv(rows, columns);
   if (statusElement) statusElement.textContent = 'Saving…';
   try {
     const response = await fetch('/api/save-run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filename, csv }),
+      body: JSON.stringify({ ...requestFields, filename, csv }),
     });
     if (!response.ok) throw new Error(`server returned ${response.status}`);
     const info = await response.json();

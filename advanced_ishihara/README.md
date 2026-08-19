@@ -111,6 +111,9 @@ session engine:
   same-family alternatives;
 - allocates automatic one-, two-, and three-glyph quotas as evenly as possible,
   with reproducible remainder assignment;
+- plans candidate signatures before rendering, reports the exact eligible pool,
+  and redraws only participant-specific candidates whose repeat slots exceed
+  the 10% pre-session ceiling;
 - records a versioned estimated structural-difficulty score and its raw
   components for every stimulus;
 - generates and validates only the frozen session's assets;

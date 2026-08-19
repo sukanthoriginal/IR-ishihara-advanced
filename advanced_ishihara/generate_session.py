@@ -217,6 +217,97 @@ def derive_seed(seed: int, stream_name: str) -> int:
     return int.from_bytes(digest[:8], "big")
 
 
+def eligible_transformation_counts(grammar: dict, split: str) -> dict[int, int]:
+    """Count runnable transformation signatures for a source split.
+
+    Multi-glyph signatures may use identities as context but must contain at
+    least one change. A one-glyph trial additionally needs a source family
+    with four distinct interpretations (identity plus three changes), matching
+    :func:`select_base_trials`.
+    """
+    if split not in {"train", "test"}:
+        raise ValueError("split must be train or test")
+    families = [
+        family for family in grammar["sourceFamilies"]
+        if family["split"] == split
+    ]
+    mapping_count = sum(family["familySize"] for family in families)
+    identity_count = len(families)
+    return {
+        1: sum(
+            family["changedCount"]
+            for family in families
+            if family["familySize"] >= 4
+        ),
+        2: mapping_count ** 2 - identity_count ** 2,
+        3: mapping_count ** 3 - identity_count ** 3,
+    }
+
+
+def plan_session(
+    settings: dict,
+    repo_root: Path = REPO_ROOT,
+    grammar: dict | None = None,
+) -> dict:
+    """Select a deterministic session without rendering any assets.
+
+    The local server uses this lightweight plan to audit participant-history
+    repeats before committing to the expensive plate and audio render. Calling
+    :func:`prepare_session` with the same settings reproduces these exact base
+    specifications.
+    """
+    return _plan_normalized_session(
+        normalize_settings(settings), grammar or load_grammar(repo_root),
+    )
+
+
+def _plan_normalized_session(normalized: dict, grammar: dict) -> dict:
+    """Build a lightweight plan from already validated inputs."""
+    selection_rng = random.Random(derive_seed(normalized["seed"], "selection-v1"))
+    foil_rng = random.Random(derive_seed(normalized["seed"], "foils-v1"))
+    families = [
+        family
+        for family in grammar["sourceFamilies"]
+        if family["split"] == normalized["split"]
+    ]
+    quotas = glyph_count_quotas(
+        normalized["baseStimulusCount"],
+        normalized["glyphComposition"],
+        normalized["seed"],
+    )
+    glyph_lengths = [
+        glyph_count
+        for glyph_count in (1, 2, 3)
+        for _index in range(quotas[glyph_count])
+    ]
+    selection_rng.shuffle(glyph_lengths)
+    base_specs = select_base_trials(
+        families,
+        normalized["baseStimulusCount"],
+        selection_rng,
+        glyph_lengths=glyph_lengths,
+        foil_rng=foil_rng,
+    )
+    eligible_by_length = eligible_transformation_counts(
+        grammar, normalized["split"],
+    )
+    enabled_lengths = (
+        (1, 2, 3)
+        if normalized["glyphComposition"] == "automatic"
+        else (int(normalized["glyphComposition"]),)
+    )
+    return {
+        "settings": normalized,
+        "catalog_version": grammar.get("catalogVersion", 1),
+        "glyph_count_quotas": quotas,
+        "eligible_by_glyph_count": eligible_by_length,
+        "eligible_transformation_count": sum(
+            eligible_by_length[length] for length in enabled_lengths
+        ),
+        "base_specs": base_specs,
+    }
+
+
 def prepare_session(
     settings: dict,
     output_root: Path,
@@ -242,32 +333,10 @@ def prepare_session(
             return manifest_path, manifest
 
     output_root.mkdir(parents=True, exist_ok=True)
-    selection_rng = random.Random(derive_seed(normalized["seed"], "selection-v1"))
-    foil_rng = random.Random(derive_seed(normalized["seed"], "foils-v1"))
     schedule_rng = random.Random(derive_seed(normalized["seed"], "schedule-v1"))
-    families = [
-        family
-        for family in grammar["sourceFamilies"]
-        if family["split"] == normalized["split"]
-    ]
-    quotas = glyph_count_quotas(
-        normalized["baseStimulusCount"],
-        normalized["glyphComposition"],
-        normalized["seed"],
-    )
-    glyph_lengths = [
-        glyph_count
-        for glyph_count in (1, 2, 3)
-        for _index in range(quotas[glyph_count])
-    ]
-    selection_rng.shuffle(glyph_lengths)
-    base_specs = select_base_trials(
-        families,
-        normalized["baseStimulusCount"],
-        selection_rng,
-        glyph_lengths=glyph_lengths,
-        foil_rng=foil_rng,
-    )
+    planned = _plan_normalized_session(normalized, grammar)
+    quotas = planned["glyph_count_quotas"]
+    base_specs = planned["base_specs"]
 
     with tempfile.TemporaryDirectory(prefix="advanced-build-", dir=output_root) as temp_name:
         build_root = Path(temp_name)

@@ -41,6 +41,14 @@
     .summary-grid div:nth-child(4n+1) { border-left:0; }
     .summary-grid dt { margin:0 0 3px; color:var(--muted); font-size:.76rem; letter-spacing:.04em; text-transform:uppercase; }
     .summary-grid dd { margin:0; overflow-wrap:anywhere; font-weight:650; }
+    .audit-card { margin-top:20px; padding:18px; border:1px solid var(--line); border-radius:10px; background:var(--panel-2); }
+    .audit-heading { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+    .audit-heading h3 { margin:0; }
+    .audit-badge { display:inline-flex; align-items:center; min-height:28px; padding:4px 9px; border:1px solid var(--line); border-radius:999px; color:var(--muted); font-size:.8rem; font-weight:700; }
+    .audit-badge.good { border-color:#287945; background:#12291b; color:var(--good); }
+    .audit-badge.error { border-color:#8a3535; background:#301818; color:var(--bad); }
+    .audit-card .summary-grid { margin-top:10px; }
+    .audit-note { margin:12px 0 0; }
     #trial-screen { min-height:100vh; padding:12px; }
     .trial-header { display:grid; grid-template-columns:1fr auto 1fr; align-items:start; gap:12px; color:var(--muted); font-size:.9rem; }
     .trial-header .center { text-align:center; }
@@ -69,12 +77,21 @@
     <section class="panel">
       <h2>Build a simulator block</h2>
       <div class="grid">
-        <label>Participant ID<input id="participant-id" autocomplete="off" required></label>
+        <label>Participant ID
+          <input id="participant-id" autocomplete="off" required>
+          <span class="field-note">Remembered locally and used to check that participant's prior exposures.</span>
+        </label>
         <label>Source set
           <select id="split">
             <option value="train">Training set — 2/3 mappings (13/19 source families)</option>
             <option value="test">Held-out test — 1/3 mappings (6/19 source families)</option>
           </select>
+        </label>
+        <label class="full">Results directory
+          <span class="input-action"><input id="results-directory" autocomplete="off" spellcheck="false" placeholder="Loading local results directory…"><button id="remember-preferences-btn" class="small" type="button">Remember</button></span>
+          <span class="field-note">Use an existing absolute folder path. Result CSV files will be saved there.</span>
+          <span id="preferences-status" class="field-note" role="status">Participant and results location are stored only on this computer.</span>
+          <span id="history-location" class="field-note"></span>
         </label>
         <label>Signal design
           <select id="signal-mode">
@@ -136,7 +153,7 @@
           </label>
           <label>Reproducible run code
             <span class="input-action"><input id="seed" type="number" min="0" max="4294967295" step="1" inputmode="numeric"><button id="new-seed-btn" class="small" type="button">New code</button></span>
-            <span class="field-note">Reuse this code to recreate the same stimuli and order.</span>
+            <span class="field-note">Reuse this code to request the same initial candidate. Participant-history checks may select a different effective code.</span>
           </label>
         </div>
       </details>
@@ -169,7 +186,30 @@
       <div class="actions">
         <button id="prepare-btn" class="primary">Generate and preload block</button>
         <span id="prepare-status" class="status">No assets loaded.</span>
+        <button id="release-abandoned-btn" class="small hidden" type="button">Release abandoned session</button>
+        <span id="release-abandoned-status" class="status hidden" role="status"></span>
       </div>
+
+      <section id="randomization-audit" class="audit-card hidden" aria-labelledby="randomization-audit-heading">
+        <div class="audit-heading">
+          <h3 id="randomization-audit-heading">Pre-session randomization audit</h3>
+          <span id="audit-status" class="audit-badge" role="status"></span>
+        </div>
+        <dl class="summary-grid" aria-live="polite">
+          <div><dt>Eligible transformations</dt><dd id="audit-eligible"></dd></div>
+          <div><dt>Participant history coverage</dt><dd id="audit-history"></dd></div>
+          <div><dt>Participant-history repeats</dt><dd id="audit-historical-repeats"></dd></div>
+          <div><dt>Within-candidate repeats</dt><dd id="audit-within-candidate-repeats"></dd></div>
+          <div><dt>Overall repeat slots</dt><dd id="audit-repeats"></dd></div>
+          <div><dt>Maximum allowed</dt><dd id="audit-threshold"></dd></div>
+          <div><dt>Candidate transformations</dt><dd id="audit-candidate-count"></dd></div>
+          <div><dt>Requested run code</dt><dd id="audit-requested-seed"></dd></div>
+          <div><dt>Effective run code</dt><dd id="audit-effective-seed"></dd></div>
+          <div><dt>Rerandomizations</dt><dd id="audit-rerandomizations"></dd></div>
+        </dl>
+        <p id="audit-note" class="field-note audit-note"></p>
+        <p class="field-note audit-note">Participant history is checked again immediately before Start.</p>
+      </section>
       <div id="prepared-panel" class="actions hidden">
         <button id="start-btn" class="primary">Start block</button>
         <span id="prepared-summary" class="status"></span>
@@ -202,11 +242,12 @@
         <button id="save-btn" class="primary">Save CSV</button>
         <button id="new-btn">New block</button>
         <span id="save-status" class="status"></span>
+        <span id="exposure-status" class="status"></span>
       </div>
     </section>
   </main>
 
   <div id="boot-error" class="page hidden status error"></div>
-  <script type="module" src="app.js?v=advanced-3"></script>
+  <script type="module" src="app.js?v=advanced-6"></script>
 </body>
 </html>
