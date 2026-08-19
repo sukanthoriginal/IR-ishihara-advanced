@@ -841,6 +841,7 @@ class AdvancedGeneratorTests(unittest.TestCase):
                     inner_self.returncode = -9
 
             def fake_popen(command, **kwargs):
+                self.assertTrue(kwargs["start_new_session"])
                 process = CompletingProcess(command, kwargs["stderr"])
                 processes.append(process)
                 return process
@@ -865,60 +866,50 @@ class AdvancedGeneratorTests(unittest.TestCase):
             self.assertFalse(process.partial.exists())
             soundscape.validate_wav(destination)
 
-    def test_soundscape_rejects_natural_nonzero_exit_after_validation(self):
+    def test_soundscape_accepts_status_one_after_complete_frame(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             destination = root / "probe.wav"
             processes = []
 
-            class LateExitProcess:
+            class CompletedProcess:
                 def __init__(inner_self, command, stderr):
                     inner_self.partial = Path(
                         command[command.index("-o") + 1]
                     )
                     self._write_wav(inner_self.partial, 200)
                     inner_self.poll_count = 0
-                    inner_self.stderr = stderr
 
                 def poll(inner_self):
                     inner_self.poll_count += 1
-                    if inner_self.poll_count == 1:
-                        return None
-                    inner_self.stderr.write(b"late renderer failure\n")
-                    inner_self.stderr.flush()
-                    return 9
+                    return 1
 
                 def terminate(inner_self):
-                    self.fail("a naturally exited process must not be terminated")
+                    self.fail("an exited process must not be terminated")
 
                 def wait(inner_self, timeout=None):
-                    return 9
+                    return 1
 
                 def kill(inner_self):
-                    self.fail("a naturally exited process must not be killed")
+                    self.fail("an exited process must not be killed")
 
             def fake_popen(command, **kwargs):
-                process = LateExitProcess(command, kwargs["stderr"])
+                process = CompletedProcess(command, kwargs["stderr"])
                 processes.append(process)
                 return process
 
-            with patch.object(
-                soundscape.subprocess, "Popen", side_effect=fake_popen,
-            ):
-                with self.assertRaisesRegex(
-                    RuntimeError, "status 9.*before publication.*late renderer failure",
-                ):
-                    soundscape._generate_once(
-                        root / "input.png",
-                        destination,
-                        root / "raspivoice",
-                        root,
-                    )
+            with patch.object(soundscape.subprocess, "Popen", side_effect=fake_popen):
+                soundscape._generate_once(
+                    root / "input.png",
+                    destination,
+                    root / "raspivoice",
+                    root,
+                )
 
             process = processes[0]
-            self.assertEqual(process.poll_count, 2)
+            self.assertEqual(process.poll_count, 1)
             self.assertFalse(process.partial.exists())
-            self.assertFalse(destination.exists())
+            soundscape.validate_wav(destination)
 
     def test_soundscape_enospc_reaps_child_and_publishes_nothing(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import math
 import os
-import signal
 import subprocess
 import tempfile
 import time
@@ -293,6 +292,10 @@ def _generate_once(
                     stdout=subprocess.DEVNULL,
                     stderr=diagnostic_stream,
                     env=environment,
+                    # raspivoice otherwise opens the server's controlling TTY
+                    # and starts its interactive ncurses UI.  It is only a
+                    # headless one-frame renderer here.
+                    start_new_session=True,
                 )
                 deadline = time.monotonic() + RASPIVOICE_MAX_WAIT_S
                 last_validation_error = None
@@ -302,11 +305,6 @@ def _generate_once(
                     except RuntimeError as error:
                         last_validation_error = error
                     else:
-                        return_code = process.poll()
-                        if return_code is not None and return_code != 0:
-                            raise RuntimeError(
-                                f"raspivoice exited with status {return_code}"
-                            )
                         break
 
                     return_code = process.poll()
@@ -330,20 +328,15 @@ def _generate_once(
                         )
                     time.sleep(RASPIVOICE_POLL_INTERVAL_S)
 
-                termination_requested, final_return_code = _stop_process(process)
+                # A complete frame is the success boundary for this adapter.
+                # raspivoice is an interactive loop and can report a nonzero
+                # status while leaving that loop after the requested frame has
+                # already been written.  Reject nonzero exits above while the
+                # WAV is incomplete; after completion, reap and validate the
+                # final bytes instead of treating loop shutdown as a render
+                # failure.
+                _stop_process(process)
                 process = None
-                accepted_signal_codes = {-signal.SIGTERM, -signal.SIGKILL}
-                if (
-                    final_return_code not in (None, 0)
-                    and not (
-                        termination_requested
-                        and final_return_code in accepted_signal_codes
-                    )
-                ):
-                    raise RuntimeError(
-                        f"raspivoice exited with status {final_return_code} "
-                        f"after writing {wav_path.name}, before publication"
-                    )
                 validate_wav(partial_path)
                 os.replace(partial_path, wav_path)
             except RuntimeError as error:
