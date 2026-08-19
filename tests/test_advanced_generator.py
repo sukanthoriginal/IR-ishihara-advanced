@@ -57,7 +57,7 @@ class AdvancedGeneratorTests(unittest.TestCase):
         self.assertEqual(generator.normalize_settings({}), {
             "split": "train",
             "signalMode": "mixed",
-            "baseStimulusCount": 18,
+            "baseStimulusCount": 30,
             "glyphComposition": "automatic",
             "progression": "growing",
             "feedbackEnabled": True,
@@ -104,7 +104,7 @@ class AdvancedGeneratorTests(unittest.TestCase):
         with patch.object(generator.sys, "argv", ["generate_session.py"]):
             arguments = generator.parse_args()
         self.assertEqual(arguments.signal_mode, "mixed")
-        self.assertEqual(arguments.stimuli, 18)
+        self.assertEqual(arguments.stimuli, 30)
         self.assertEqual(arguments.progression, "growing")
         self.assertTrue(arguments.feedback)
 

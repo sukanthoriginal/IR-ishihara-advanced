@@ -137,7 +137,7 @@ def normalize_settings(settings: dict) -> dict:
         else:
             base_count_value = legacy_trial_count
     if base_count_value is None:
-        base_count_value = 18
+        base_count_value = 30
     base_count = _coerce_integer(
         base_count_value, "baseStimulusCount",
     )
@@ -1657,7 +1657,7 @@ def parse_args() -> argparse.Namespace:
         "--signal", "--signal-mode", dest="signal_mode",
         choices=("visual", "ir", "mixed", "paired"), default="mixed",
     )
-    parser.add_argument("--stimuli", type=int, default=18)
+    parser.add_argument("--stimuli", type=int, default=30)
     parser.add_argument(
         "--glyph-composition", choices=("automatic", "1", "2", "3"),
         default="automatic",

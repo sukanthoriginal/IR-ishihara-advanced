@@ -73,7 +73,7 @@ class AdvancedWebStaticTests(unittest.TestCase):
         )
         self.assertIn('<optgroup label="Advanced research mode">', self.html)
         self.assertIn('id="base-stimulus-count"', self.html)
-        self.assertIn('id="base-stimulus-count" type="number" min="4" max="96" step="1" value="18"', self.html)
+        self.assertIn('id="base-stimulus-count" type="number" min="4" max="96" step="1" value="30"', self.html)
         self.assertIn(
             '<option value="mixed">Shuffled — balanced difficulty range</option>',
             self.html,

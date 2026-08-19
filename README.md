@@ -57,7 +57,7 @@ experimental blocks:
   testing (6/19 families, exactly 1/3 of mappings);
 - default Mixed visual-versus-IR delivery, standalone silent Visual or IR-only
   delivery, and the advanced Repeated-pair design;
-- 4--96 stimulus instances (18 by default), presented once in Mixed and standalone modes, with
+- 4--96 stimulus instances (30 by default), presented once in Mixed and standalone modes, with
   Repeated pair producing twice as many presentations;
 - **Growing practice** from simpler to harder by default, or **Shuffled**
   progression across the balanced difficulty range;
