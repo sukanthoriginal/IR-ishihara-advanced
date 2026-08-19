@@ -98,6 +98,15 @@ class LocalParticipantState:
             )
             connection.execute(
                 """
+                CREATE TABLE IF NOT EXISTS participants (
+                    participant_id TEXT PRIMARY KEY,
+                    registered_at TEXT NOT NULL,
+                    last_used_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
                 CREATE TABLE IF NOT EXISTS exposures (
                     participant_id TEXT NOT NULL,
                     transformation_signature TEXT NOT NULL,
@@ -147,6 +156,38 @@ class LocalParticipantState:
                 )
                 """
             )
+            now = utc_now()
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO participants (
+                    participant_id, registered_at, last_used_at
+                )
+                SELECT DISTINCT participant_id, ?, ? FROM exposures
+                """,
+                (now, now),
+            )
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO participants (
+                    participant_id, registered_at, last_used_at
+                )
+                SELECT DISTINCT participant_id, ?, ?
+                FROM prepared_session_bindings
+                """,
+                (now, now),
+            )
+            remembered = connection.execute(
+                "SELECT value FROM preferences WHERE key = 'last_participant_id'"
+            ).fetchone()
+            if remembered and remembered[0].strip():
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO participants (
+                        participant_id, registered_at, last_used_at
+                    ) VALUES (?, ?, ?)
+                    """,
+                    (remembered[0].strip(), now, now),
+                )
         self.database_path.chmod(0o600)
 
     def preferences(self) -> dict:
@@ -170,7 +211,9 @@ class LocalParticipantState:
     ) -> dict:
         updates: dict[str, str] = {}
         if participant_id is not None:
-            updates["last_participant_id"] = normalize_participant_id(participant_id)
+            participant = normalize_participant_id(participant_id)
+            self.register_participant(participant)
+            updates["last_participant_id"] = participant
         if save_directory is not None:
             updates["save_directory"] = str(self.validate_save_directory(save_directory))
         if updates:
@@ -187,6 +230,55 @@ class LocalParticipantState:
                     [(key, value, now) for key, value in updates.items()],
                 )
         return self.preferences()
+
+    def register_participant(self, participant_id: object) -> dict:
+        participant = normalize_participant_id(participant_id)
+        now = utc_now()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO participants (
+                    participant_id, registered_at, last_used_at
+                ) VALUES (?, ?, ?)
+                ON CONFLICT(participant_id) DO UPDATE SET
+                    last_used_at = excluded.last_used_at
+                """,
+                (participant, now, now),
+            )
+        return next(
+            item for item in self.participants()
+            if item["participantId"] == participant
+        )
+
+    def participants(self) -> list[dict]:
+        timestamp = time.time()
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT p.participant_id, p.registered_at, p.last_used_at,
+                       COUNT(e.transformation_signature),
+                       CASE WHEN l.expires_at > ? THEN 1 ELSE 0 END
+                FROM participants AS p
+                LEFT JOIN exposures AS e
+                  ON e.participant_id = p.participant_id
+                LEFT JOIN participant_session_leases AS l
+                  ON l.participant_id = p.participant_id
+                GROUP BY p.participant_id, p.registered_at, p.last_used_at,
+                         l.expires_at
+                ORDER BY p.last_used_at DESC, p.participant_id COLLATE NOCASE
+                """,
+                (timestamp,),
+            ).fetchall()
+        return [
+            {
+                "participantId": row[0],
+                "registeredAt": row[1],
+                "lastUsedAt": row[2],
+                "participantUniqueSeen": int(row[3]),
+                "activeSession": bool(row[4]),
+            }
+            for row in rows
+        ]
 
     def validate_save_directory(self, value: object) -> Path:
         raw = str(value).strip()

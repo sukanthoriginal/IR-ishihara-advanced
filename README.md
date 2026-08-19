@@ -43,7 +43,7 @@ total), a 220 ms mask appears. The participant then chooses among four complete,
 plausible interpretations. One is the target, one is the fully unchanged source
 decoy, and two are close alternatives from the same source families.
 
-Feedback is explicitly configurable and defaults to off. Enabling it for
+Feedback is explicitly configurable and defaults to on. Enabling it for
 held-out sources warns that doing so exposes test mappings; enabling it for
 repeated pairs warns that the first presentation can reveal the answer before
 its repeat.
@@ -57,11 +57,11 @@ experimental blocks:
   testing (6/19 families, exactly 1/3 of mappings);
 - default Mixed visual-versus-IR delivery, standalone silent Visual or IR-only
   delivery, and the advanced Repeated-pair design;
-- 4--96 stimulus instances, presented once in Mixed and standalone modes, with
+- 4--96 stimulus instances (18 by default), presented once in Mixed and standalone modes, with
   Repeated pair producing twice as many presentations;
 - **Shuffled** trial progression by default, or **Growing practice** from
   simpler to harder;
-- manual feedback (off by default), keyboard or pointer response, and compact,
+- manual feedback (on by default), keyboard or pointer response, and compact,
   expanded, or physically calibrated presentation; and
 - automatic balanced one-/two-/three-glyph composition, or a forced glyph
   count, under **Advanced block settings**.
@@ -75,7 +75,9 @@ evenly as possible across one, two, and three glyphs; a seeded remainder rule
 makes the preview and generated manifest agree for counts not divisible by
 three.
 
-Participant ID and the chosen CSV results directory are remembered locally.
+Registered participant names appear in a local selection bar, and a new name
+can be added without losing earlier participant-specific history. The selected
+participant and chosen CSV results directory are remembered locally.
 Before assets are rendered, the server draws the requested candidate normally
 and compares its ordered transformation signatures with that participant's
 exposure history. A candidate is accepted when no more than 10% of its base

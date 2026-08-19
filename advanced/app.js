@@ -22,6 +22,8 @@ const prepareStatus = document.getElementById('prepare-status');
 const releaseAbandonedButton = document.getElementById('release-abandoned-btn');
 const releaseAbandonedStatus = document.getElementById('release-abandoned-status');
 const participantInput = document.getElementById('participant-id');
+const participantPicker = document.getElementById('participant-picker');
+const registerParticipantButton = document.getElementById('register-participant-btn');
 const resultsDirectoryInput = document.getElementById('results-directory');
 const rememberPreferencesButton = document.getElementById('remember-preferences-btn');
 const preferencesStatus = document.getElementById('preferences-status');
@@ -89,6 +91,9 @@ saveButton.addEventListener('click', saveResults);
 rememberPreferencesButton.addEventListener('click', () => {
   rememberPreferences().catch(() => {});
 });
+registerParticipantButton.addEventListener('click', () => {
+  registerParticipant().catch(() => {});
+});
 releaseAbandonedButton.addEventListener('click', releaseAbandonedSession);
 newButton.addEventListener('click', resetApp);
 document.getElementById('presentation').addEventListener('change', updateCalibrationVisibility);
@@ -108,6 +113,7 @@ for (const id of [
 }
 participantInput.addEventListener('input', () => {
   preferencesTouched = true;
+  renderParticipantPicker(localState?.participants || []);
   hideAbandonedSessionRecoveryIfParticipantChanged();
   invalidatePreparedBlock();
 });
@@ -221,6 +227,96 @@ async function rememberPreferences({ quiet = false, updateControls = true } = {}
   }
 }
 
+async function registerParticipant() {
+  const participantId = participantInput.value.trim();
+  if (!participantId) {
+    preferencesStatus.className = 'field-note status error';
+    preferencesStatus.textContent = 'Enter a participant name to register.';
+    throw new Error('Participant ID is required.');
+  }
+  registerParticipantButton.disabled = true;
+  preferencesStatus.className = 'field-note status';
+  preferencesStatus.textContent = 'Registering participant locally…';
+  try {
+    const response = await fetch('/api/participants', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ participantId }),
+    });
+    const info = await response.json();
+    if (!response.ok) throw new Error(info.error || `server returned ${response.status}`);
+    preferencesTouched = true;
+    applyLocalState(info, { updateControls: true });
+    preferencesStatus.className = 'field-note status good';
+    preferencesStatus.textContent = `Participant “${participantId}” is selected and remembered locally.`;
+    return info;
+  } catch (error) {
+    preferencesStatus.className = 'field-note status error';
+    preferencesStatus.textContent = `Could not register participant: ${String(error.message || error)}`;
+    throw error;
+  } finally {
+    registerParticipantButton.disabled = false;
+  }
+}
+
+async function selectRegisteredParticipant(participantId) {
+  if (phase !== 'setup') return;
+  participantInput.value = participantId;
+  preferencesTouched = true;
+  hideAbandonedSessionRecoveryIfParticipantChanged();
+  invalidatePreparedBlock();
+  renderParticipantPicker(localState?.participants || []);
+  try {
+    await rememberPreferences({ quiet: true, updateControls: true });
+    preferencesStatus.className = 'field-note status good';
+    preferencesStatus.textContent = `Participant “${participantId}” selected.`;
+  } catch (_error) {
+    // rememberPreferences already displays the actionable error.
+  }
+}
+
+function renderParticipantPicker(participants) {
+  participantPicker.replaceChildren();
+  const selectedParticipantId = participantInput.value.trim();
+  const validParticipants = Array.isArray(participants)
+    ? participants.filter(item => String(item?.participantId ?? '').trim())
+    : [];
+  if (!validParticipants.length) {
+    const empty = document.createElement('span');
+    empty.className = 'field-note';
+    empty.textContent = 'No previously played participants yet.';
+    participantPicker.append(empty);
+  }
+  for (const participant of validParticipants) {
+    const participantId = String(participant.participantId).trim();
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'participant-chip';
+    button.classList.toggle('selected', participantId === selectedParticipantId);
+    button.setAttribute('aria-pressed', participantId === selectedParticipantId ? 'true' : 'false');
+    button.textContent = participantId;
+    const seen = Number(participant.participantUniqueSeen);
+    button.title = Number.isSafeInteger(seen)
+      ? `${seen} previously exposed transformation${seen === 1 ? '' : 's'}`
+      : 'Registered participant';
+    button.addEventListener('click', () => selectRegisteredParticipant(participantId));
+    participantPicker.append(button);
+  }
+  const addButton = document.createElement('button');
+  addButton.type = 'button';
+  addButton.className = 'participant-chip';
+  addButton.textContent = '+ New participant';
+  addButton.addEventListener('click', () => {
+    if (phase !== 'setup') return;
+    participantInput.value = '';
+    preferencesTouched = true;
+    invalidatePreparedBlock();
+    renderParticipantPicker(validParticipants);
+    participantInput.focus();
+  });
+  participantPicker.append(addButton);
+}
+
 function applyLocalState(info, { updateControls }) {
   localState = info;
   const participantId = String(info.participantId ?? info.participant_id ?? '').trim();
@@ -245,6 +341,7 @@ function applyLocalState(info, { updateControls }) {
   historyLocation.textContent = historyPath
     ? `Participant exposure history: ${historyPath}`
     : 'Participant exposure history is kept beside the local results data.';
+  renderParticipantPicker(info.participants);
   if (
     updateControls
     && (
@@ -1931,4 +2028,4 @@ const CSV_COLUMNS = [
   'fullscreen_at_onset', 'device_pixel_ratio', 'timestamp',
 ];
 
-document.documentElement.dataset.advancedIshiharaVersion = 'advanced-6';
+document.documentElement.dataset.advancedIshiharaVersion = 'advanced-7';

@@ -21,12 +21,16 @@
     .field-note { font-size:.82rem; line-height:1.35; }
     .panel { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:22px; margin-top:22px; }
     .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
-    label { display:grid; min-width:0; align-content:start; gap:6px; color:#d8dbe0; }
+    label, .field { display:grid; min-width:0; align-content:start; gap:6px; color:#d8dbe0; }
     input, select { width:100%; border:1px solid var(--line); border-radius:7px; background:#0f1115; color:var(--ink); padding:.65rem .72rem; }
     input:focus, select:focus, button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
     .full { grid-column:1/-1; }
     .input-action { display:flex; gap:8px; }
     .input-action input { min-width:0; flex:1 1 auto; }
+    .participant-toggle { display:flex; gap:7px; flex-wrap:wrap; min-height:38px; align-items:center; }
+    .participant-toggle:empty::before { content:"No participants registered yet"; color:var(--muted); font-size:.82rem; }
+    .participant-chip { padding:.48rem .7rem; border-radius:999px; background:#20242b; }
+    .participant-chip.selected { border-color:var(--accent); background:#17355d; }
     .actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:20px; }
     .status { color:var(--muted); }
     .status.error { color:var(--bad); }
@@ -77,10 +81,12 @@
     <section class="panel">
       <h2>Build a simulator block</h2>
       <div class="grid">
-        <label>Participant ID
-          <input id="participant-id" autocomplete="off" required>
-          <span class="field-note">Remembered locally and used to check that participant's prior exposures.</span>
-        </label>
+        <div class="field full">
+          <label for="participant-id">Participant</label>
+          <div id="participant-picker" class="participant-toggle" role="group" aria-label="Registered participants"></div>
+          <span class="input-action"><input id="participant-id" autocomplete="off" required placeholder="Add a new participant name"><button id="register-participant-btn" class="small" type="button">Register / select</button></span>
+          <span class="field-note">Select a previously played participant, or register a new local name. History remains participant-specific.</span>
+        </div>
         <label>Source set
           <select id="split">
             <option value="train">Training set — 2/3 mappings (13/19 source families)</option>
@@ -107,7 +113,7 @@
           <span class="field-note">Mixed assigns each puzzle once: visual diagnostic + neutral carrier audio, or source scaffold + IR diagnostic audio.</span>
         </label>
         <label>Stimuli
-          <input id="base-stimulus-count" type="number" min="4" max="96" step="1" value="12">
+          <input id="base-stimulus-count" type="number" min="4" max="96" step="1" value="18">
           <span class="field-note">Mixed mode presents each stimulus once. Repeated-pair research mode presents it twice.</span>
         </label>
         <label>Trial progression
@@ -119,8 +125,8 @@
         </label>
         <label>Feedback
           <select id="feedback-enabled">
-            <option value="off" selected>Off</option>
-            <option value="on">On</option>
+            <option value="off">Off</option>
+            <option value="on" selected>On</option>
           </select>
         </label>
         <label>Response
@@ -248,6 +254,6 @@
   </main>
 
   <div id="boot-error" class="page hidden status error"></div>
-  <script type="module" src="app.js?v=advanced-6"></script>
+  <script type="module" src="app.js?v=advanced-7"></script>
 </body>
 </html>

@@ -44,6 +44,10 @@ class LocalParticipantStateTests(unittest.TestCase):
             remembered = state.update_preferences("P 001", result_root)
             self.assertEqual(remembered["participantId"], "P 001")
             self.assertEqual(remembered["saveDirectory"], str(result_root.resolve()))
+            self.assertEqual(
+                [item["participantId"] for item in state.participants()],
+                ["P 001"],
+            )
 
             first = state.record_exposure(
                 "P 001", "session-a", "stimulus-1", "1--2",
@@ -54,18 +58,34 @@ class LocalParticipantStateTests(unittest.TestCase):
             self.assertTrue(first["recorded"])
             self.assertFalse(duplicate["recorded"])
             self.assertEqual(duplicate["participantUniqueSeen"], 1)
+            self.assertEqual(state.participants()[0]["participantUniqueSeen"], 1)
             self.assertEqual(state.history_signatures("P 001"), {"1--2"})
             self.assertEqual(state.history_signatures("another participant"), set())
 
             reopened = LocalParticipantState(data_root, data_root, repo_root)
             self.assertEqual(reopened.preferences()["participantId"], "P 001")
             self.assertEqual(reopened.history_signatures("P 001"), {"1--2"})
+            self.assertEqual(reopened.participants()[0]["participantId"], "P 001")
             self.assertTrue((data_root / "participant_history.sqlite3").is_file())
             self.assertEqual(stat.S_IMODE(data_root.stat().st_mode), 0o700)
             self.assertEqual(
                 stat.S_IMODE((data_root / "participant_history.sqlite3").stat().st_mode),
                 0o600,
             )
+
+    def test_registered_participants_are_local(self):
+        with tempfile.TemporaryDirectory() as temp_name:
+            temp_root = Path(temp_name)
+            repo_root = temp_root / "repo"
+            data_root = repo_root / "test_data"
+            repo_root.mkdir()
+            state = LocalParticipantState(data_root, data_root, repo_root)
+            state.register_participant("Participant A")
+            state.register_participant("Participant B")
+            summaries = {item["participantId"]: item for item in state.participants()}
+            self.assertEqual(set(summaries), {"Participant A", "Participant B"})
+            self.assertFalse(summaries["Participant A"]["activeSession"])
+            self.assertFalse(summaries["Participant B"]["activeSession"])
 
     def test_repository_results_must_remain_under_ignored_data_tree(self):
         with tempfile.TemporaryDirectory() as temp_name:
@@ -748,6 +768,13 @@ class LocalParticipantHttpTests(unittest.TestCase):
                 initial = self.get_json(base_url + "/api/local-state")
                 self.assertEqual(initial["participantId"], "")
                 self.assertEqual(initial["participantUniqueSeen"], 0)
+                registered = self.post_json(base_url + "/api/participants", {
+                    "participantId": "P-new",
+                })
+                self.assertIn(
+                    "P-new",
+                    [item["participantId"] for item in registered["participants"]],
+                )
 
                 remembered = self.post_json(base_url + "/api/preferences", {
                     "participantId": "P-http",

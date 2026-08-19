@@ -86,6 +86,8 @@ def make_handler(repo_root: Path, test_data_dir: Path, session_dir: Path):
                 self._prepare_session()
             elif path == "/api/preferences":
                 self._preferences()
+            elif path == "/api/participants":
+                self._register_participant()
             elif path == "/api/revalidate-session":
                 self._revalidate_session()
             elif path == "/api/release-session":
@@ -248,13 +250,17 @@ def make_handler(repo_root: Path, test_data_dir: Path, session_dir: Path):
             })
 
         def _local_state(self):
+            self._write_json(200, self._local_state_payload())
+
+        def _local_state_payload(self):
             state = local_state.preferences()
             participant_id = state["participantId"]
             state["participantUniqueSeen"] = (
                 len(local_state.history_signatures(participant_id))
                 if participant_id else 0
             )
-            self._write_json(200, state)
+            state["participants"] = local_state.participants()
+            return state
 
         def _preferences(self):
             try:
@@ -262,19 +268,24 @@ def make_handler(repo_root: Path, test_data_dir: Path, session_dir: Path):
                 requested_directory = payload.get(
                     "saveDirectory", payload.get("resultsDirectory"),
                 )
-                state = local_state.update_preferences(
+                local_state.update_preferences(
                     participant_id=payload.get("participantId"),
                     save_directory=requested_directory,
                 )
             except ValueError as error:
                 self._write_json(400, {"error": str(error)})
                 return
-            participant_id = state["participantId"]
-            state["participantUniqueSeen"] = (
-                len(local_state.history_signatures(participant_id))
-                if participant_id else 0
-            )
-            self._write_json(200, state)
+            self._write_json(200, self._local_state_payload())
+
+        def _register_participant(self):
+            try:
+                payload = self._read_json()
+                participant_id = normalize_participant_id(payload["participantId"])
+                local_state.update_preferences(participant_id=participant_id)
+            except (KeyError, ValueError) as error:
+                self._write_json(400, {"error": str(error)})
+                return
+            self._write_json(200, self._local_state_payload())
 
         def _record_exposure(self):
             try:

@@ -73,6 +73,7 @@ class AdvancedWebStaticTests(unittest.TestCase):
         )
         self.assertIn('<optgroup label="Advanced research mode">', self.html)
         self.assertIn('id="base-stimulus-count"', self.html)
+        self.assertIn('id="base-stimulus-count" type="number" min="4" max="96" step="1" value="18"', self.html)
         self.assertIn(
             '<option value="mixed" selected>Shuffled — balanced difficulty range</option>',
             self.html,
@@ -81,7 +82,7 @@ class AdvancedWebStaticTests(unittest.TestCase):
             '<option value="growing">Growing practice — simpler to harder</option>',
             self.html,
         )
-        self.assertIn('<option value="off" selected>Off</option>', self.html)
+        self.assertIn('<option value="on" selected>On</option>', self.html)
         self.assertIn('id="feedback-enabled"', self.html)
         self.assertIn('id="response-device"', self.html)
         self.assertIn('id="presentation"', self.html)
@@ -131,6 +132,8 @@ class AdvancedWebStaticTests(unittest.TestCase):
 
     def test_participant_preferences_and_randomization_audit_are_mandatory(self):
         self.assertIn('id="results-directory"', self.html)
+        self.assertIn('id="participant-picker"', self.html)
+        self.assertIn('id="register-participant-btn"', self.html)
         self.assertIn('id="remember-preferences-btn"', self.html)
         self.assertIn('id="exposure-status"', self.html)
         self.assertIn('id="release-abandoned-btn"', self.html)
@@ -147,6 +150,7 @@ class AdvancedWebStaticTests(unittest.TestCase):
         self.assertIn('id="audit-rerandomizations"', self.html)
         self.assertIn("fetch('/api/local-state'", self.javascript)
         self.assertIn("fetch('/api/preferences'", self.javascript)
+        self.assertIn("fetch('/api/participants'", self.javascript)
         self.assertIn("fetch('/api/record-exposure'", self.javascript)
         self.assertIn("fetch('/api/revalidate-session'", self.javascript)
         self.assertIn("fetch('/api/release-session'", self.javascript)

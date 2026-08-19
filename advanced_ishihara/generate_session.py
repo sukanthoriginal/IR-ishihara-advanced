@@ -137,7 +137,7 @@ def normalize_settings(settings: dict) -> dict:
         else:
             base_count_value = legacy_trial_count
     if base_count_value is None:
-        base_count_value = 12
+        base_count_value = 18
     base_count = _coerce_integer(
         base_count_value, "baseStimulusCount",
     )
@@ -152,7 +152,7 @@ def normalize_settings(settings: dict) -> dict:
     if progression not in {"growing", "mixed"}:
         raise ValueError("progression must be growing or mixed")
 
-    feedback_enabled = settings.get("feedbackEnabled", False)
+    feedback_enabled = settings.get("feedbackEnabled", True)
     if not isinstance(feedback_enabled, bool):
         raise ValueError("feedbackEnabled must be a boolean")
 
@@ -1657,7 +1657,7 @@ def parse_args() -> argparse.Namespace:
         "--signal", "--signal-mode", dest="signal_mode",
         choices=("visual", "ir", "mixed", "paired"), default="mixed",
     )
-    parser.add_argument("--stimuli", type=int, default=12)
+    parser.add_argument("--stimuli", type=int, default=18)
     parser.add_argument(
         "--glyph-composition", choices=("automatic", "1", "2", "3"),
         default="automatic",
@@ -1666,7 +1666,7 @@ def parse_args() -> argparse.Namespace:
         "--progression", choices=("growing", "mixed"), default="mixed",
     )
     parser.add_argument(
-        "--feedback", action=argparse.BooleanOptionalAction, default=False,
+        "--feedback", action=argparse.BooleanOptionalAction, default=True,
     )
     parser.add_argument("--seed", type=int, default=1729)
     parser.add_argument("--out", type=Path, default=REPO_ROOT / "advanced_sessions")
