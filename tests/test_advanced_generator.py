@@ -59,7 +59,7 @@ class AdvancedGeneratorTests(unittest.TestCase):
             "signalMode": "mixed",
             "baseStimulusCount": 18,
             "glyphComposition": "automatic",
-            "progression": "mixed",
+            "progression": "growing",
             "feedbackEnabled": True,
             "seed": 1729,
             "schemaVersion": generator.SCHEMA_VERSION,
@@ -105,7 +105,7 @@ class AdvancedGeneratorTests(unittest.TestCase):
             arguments = generator.parse_args()
         self.assertEqual(arguments.signal_mode, "mixed")
         self.assertEqual(arguments.stimuli, 18)
-        self.assertEqual(arguments.progression, "mixed")
+        self.assertEqual(arguments.progression, "growing")
         self.assertTrue(arguments.feedback)
 
     def test_automatic_glyph_quotas_are_even_with_seeded_remainders(self):

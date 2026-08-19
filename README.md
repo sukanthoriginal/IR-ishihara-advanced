@@ -59,8 +59,8 @@ experimental blocks:
   delivery, and the advanced Repeated-pair design;
 - 4--96 stimulus instances (18 by default), presented once in Mixed and standalone modes, with
   Repeated pair producing twice as many presentations;
-- **Shuffled** trial progression by default, or **Growing practice** from
-  simpler to harder;
+- **Growing practice** from simpler to harder by default, or **Shuffled**
+  progression across the balanced difficulty range;
 - manual feedback (on by default), keyboard or pointer response, and compact,
   expanded, or physically calibrated presentation; and
 - automatic balanced one-/two-/three-glyph composition, or a forced glyph
@@ -107,10 +107,10 @@ prioritising glyph count, difficulty stratum, changed count, and then score.
 This matching is for balance during piloting; it is not an empirically
 validated measure of equal visual and IR difficulty.
 
-The **Shuffled** progression randomizes the selected difficulty range and is
-the default. **Growing practice** orders the estimate from lower to higher;
-Repeated-pair growing blocks use two ordered passes. Here “Mixed” names the
-signal design, while “Shuffled” names trial order.
+The default **Growing practice** progression orders the estimate from lower to
+higher; Repeated-pair growing blocks use two ordered passes. **Shuffled**
+randomizes the selected difficulty range. Here “Mixed” names the signal design,
+while “Shuffled” names trial order.
 
 ## Run locally
 

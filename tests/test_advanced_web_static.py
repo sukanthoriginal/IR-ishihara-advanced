@@ -75,11 +75,11 @@ class AdvancedWebStaticTests(unittest.TestCase):
         self.assertIn('id="base-stimulus-count"', self.html)
         self.assertIn('id="base-stimulus-count" type="number" min="4" max="96" step="1" value="18"', self.html)
         self.assertIn(
-            '<option value="mixed" selected>Shuffled — balanced difficulty range</option>',
+            '<option value="mixed">Shuffled — balanced difficulty range</option>',
             self.html,
         )
         self.assertIn(
-            '<option value="growing">Growing practice — simpler to harder</option>',
+            '<option value="growing" selected>Growing practice — simpler to harder</option>',
             self.html,
         )
         self.assertIn('<option value="on" selected>On</option>', self.html)
