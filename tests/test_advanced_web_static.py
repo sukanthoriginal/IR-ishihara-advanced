@@ -40,21 +40,115 @@ class AdvancedWebStaticTests(unittest.TestCase):
         self.assertIn("Preloading every image and audio buffer", self.javascript)
         self.assertIn("Settings changed. Generate and preload", self.javascript)
         self.assertIn("manifest.settings.split", self.javascript)
-        self.assertIn("manifest.settings.mode", self.javascript)
+        self.assertIn("manifest.settings.signalMode", self.javascript)
+        self.assertIn("manifest.settings.baseStimulusCount", self.javascript)
+        self.assertIn("manifest.settings.glyphComposition", self.javascript)
+        self.assertIn("manifest.settings.progression", self.javascript)
+        self.assertIn("manifest.settings.feedbackEnabled", self.javascript)
         self.assertIn("manifest.settings.seed", self.javascript)
         self.assertIn("Press any key to start", self.javascript)
         self.assertIn("trial_start_method", self.javascript)
         self.assertIn("css_px_per_audio_column", self.javascript)
         self.assertIn("coordinate_mapping", self.javascript)
 
-    def test_two_modes_make_the_audio_comparison_explicit(self):
-        self.assertIn('<option value="visual-only">Visual-only baseline — silent</option>', self.html)
-        self.assertIn('<option value="mixed">Paired visible versus IR</option>', self.html)
-        self.assertIn("'visual-only': 'Visual-only baseline'", self.javascript)
-        self.assertIn("'visible-composite': 'Visible probe + background carrier'", self.javascript)
-        self.assertIn("'ir-composite': 'IR probe'", self.javascript)
+    def test_full_simulator_controls_and_signal_modes_are_explicit(self):
+        self.assertIn("Training set — 2/3 mappings (13/19 source families)", self.html)
+        self.assertIn("Held-out test — 1/3 mappings (6/19 source families)", self.html)
+        self.assertIn(
+            '<option value="mixed" selected>Mixed visual vs IR — carrier-controlled</option>',
+            self.html,
+        )
+        self.assertIn('<option value="visual">Visual baseline — silent</option>', self.html)
+        self.assertIn(
+            '<option value="ir">IR only — audio diagnostic</option>',
+            self.html,
+        )
+        self.assertIn(
+            '<option value="paired">Repeated pair — same puzzle twice (research)</option>',
+            self.html,
+        )
+        self.assertLess(
+            self.html.index('<option value="mixed" selected>'),
+            self.html.index('<option value="visual">'),
+        )
+        self.assertIn('<optgroup label="Advanced research mode">', self.html)
+        self.assertIn('id="base-stimulus-count"', self.html)
+        self.assertIn(
+            '<option value="mixed" selected>Shuffled — balanced difficulty range</option>',
+            self.html,
+        )
+        self.assertIn(
+            '<option value="growing">Growing practice — simpler to harder</option>',
+            self.html,
+        )
+        self.assertIn('<option value="off" selected>Off</option>', self.html)
+        self.assertIn('id="feedback-enabled"', self.html)
+        self.assertIn('id="response-device"', self.html)
+        self.assertIn('id="presentation"', self.html)
+        self.assertIn("'visual_silent': 'Visual diagnostic (silent)'", self.javascript)
+        self.assertIn(
+            "'visual_background_audio': 'Visual diagnostic + neutral carrier audio'",
+            self.javascript,
+        )
+        self.assertIn(
+            "'ir_audio': 'Source scaffold + IR diagnostic audio'",
+            self.javascript,
+        )
+        self.assertIn("mixed: 'mixed visual vs IR · carrier-controlled'", self.javascript)
+        self.assertIn("Which complete glyph did this stimulus specify?", self.html)
+        self.assertNotIn("complete multimodal stimulus", self.html)
+        self.assertIn("visual + neutral carrier", self.javascript)
         self.assertIn("manifest.sweep_repetitions", self.javascript)
         self.assertIn("manifest.inter_sweep_interval_ms", self.javascript)
+
+    def test_preview_advanced_controls_and_manual_feedback_are_wired(self):
+        self.assertIn("Automatic — balance 1, 2, and 3 glyphs", self.html)
+        self.assertIn('<option value="1">Only 1 glyph</option>', self.html)
+        self.assertIn('<option value="2">Only 2 glyphs</option>', self.html)
+        self.assertIn('<option value="3">Only 3 glyphs</option>', self.html)
+        self.assertIn("Reproducible run code", self.html)
+        for preview_id in (
+            "preview-stimuli", "preview-presentations", "preview-glyphs",
+            "preview-conditions", "preview-duration", "preview-source",
+            "preview-feedback", "preview-run-code",
+        ):
+            self.assertIn(f'id="{preview_id}"', self.html)
+        self.assertIn("(seed % 3 + index) % 3", self.javascript)
+        self.assertIn("assumes a 2-second response time", self.html)
+        self.assertIn("Feedback exposes held-out mappings", self.javascript)
+        self.assertIn("feedback can reveal an answer", self.javascript)
+        self.assertIn("signalMode === 'paired' && feedbackEnabled", self.javascript)
+        self.assertIn("const extraIsVisual = seed % 2 === 0", self.javascript)
+        self.assertIn("seeded extra:", self.javascript)
+        self.assertIn("signalMode === 'paired' ? 2 : 1", self.javascript)
+        self.assertIn("if (session.feedbackEnabled)", self.javascript)
+        self.assertNotIn("if (session.split === 'train')", self.javascript)
+        for request_key in (
+            "signalMode", "baseStimulusCount", "glyphComposition",
+            "progression", "feedbackEnabled",
+        ):
+            self.assertRegex(self.javascript, rf"\n\s+{request_key},")
+
+    def test_response_order_device_and_analysis_metadata_are_preserved(self):
+        self.assertIn("trial.response_choice_ids", self.javascript)
+        self.assertIn("displayed_choice_order", self.javascript)
+        self.assertIn("session?.responseDevice === 'keyboard'", self.javascript)
+        self.assertIn("session?.responseDevice === 'pointer'", self.javascript)
+        self.assertIn("responseInputMethod !== session?.responseDevice", self.javascript)
+        for field in (
+            "pair_order", "pair_pass", "pair_lag", "transformation_signature",
+            "mapping_repetition_index", "estimated_difficulty_score",
+            "difficulty_rank", "difficulty_stratum",
+            "difficulty_glyph_load", "difficulty_diagnostic_subtlety",
+            "difficulty_alternative_foil_similarity", "difficulty_family_ambiguity",
+            "displayed_choice_targets_json", "target_choice_id", "decoy_choice_id",
+            "schema_version", "glyph_quota_1", "total_presentation_count",
+            "comparison_design", "stimuli_repeated_across_conditions",
+            "condition_count_visual_background_audio", "condition_assignment_method",
+            "difficulty_match_id", "difficulty_match_position",
+            "difficulty_match_score_gap", "assigned_condition",
+        ):
+            self.assertIn(field, self.javascript)
 
     def test_launcher_packages_only_the_advanced_runtime(self):
         template = ROOT / "tools" / "advanced_app_template"

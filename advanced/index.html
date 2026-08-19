@@ -5,27 +5,42 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Advanced IR Ishihara</title>
   <style>
-    :root { color-scheme: dark; --bg:#0d0e10; --panel:#17191d; --line:#343840; --muted:#9ca3ad; --ink:#f4f5f7; --accent:#67a6ff; --good:#5ed28a; --bad:#ff7474; }
-    * { box-sizing: border-box; }
+    :root { color-scheme:dark; --bg:#0d0e10; --panel:#17191d; --panel-2:#111318; --line:#343840; --muted:#9ca3ad; --ink:#f4f5f7; --accent:#67a6ff; --good:#5ed28a; --bad:#ff7474; --warning:#ffc768; }
+    * { box-sizing:border-box; }
     body { margin:0; min-height:100vh; background:var(--bg); color:var(--ink); font:16px/1.4 system-ui,-apple-system,sans-serif; }
     button, input, select { font:inherit; }
     button { border:1px solid var(--line); border-radius:8px; background:#252932; color:var(--ink); padding:.72rem 1rem; cursor:pointer; }
     button.primary { background:#1768d7; border-color:#2b7de9; }
+    button.small { flex:0 0 auto; padding:.65rem .8rem; white-space:nowrap; }
     button:disabled { opacity:.45; cursor:not-allowed; }
-    .page { width:min(900px, calc(100% - 32px)); margin:0 auto; padding:32px 0 56px; }
+    .page { width:min(960px, calc(100% - 32px)); margin:0 auto; padding:32px 0 56px; }
     h1 { margin:0 0 8px; font-size:clamp(1.7rem,4vw,2.4rem); }
-    h2 { margin-top:0; }
-    .lede, .muted { color:var(--muted); }
+    h2 { margin:0 0 18px; }
+    h3 { margin:0 0 12px; font-size:1rem; }
+    .lede, .muted, .field-note { color:var(--muted); }
+    .field-note { font-size:.82rem; line-height:1.35; }
     .panel { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:22px; margin-top:22px; }
     .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
-    label { display:grid; gap:6px; color:#d8dbe0; }
+    label { display:grid; min-width:0; align-content:start; gap:6px; color:#d8dbe0; }
     input, select { width:100%; border:1px solid var(--line); border-radius:7px; background:#0f1115; color:var(--ink); padding:.65rem .72rem; }
+    input:focus, select:focus, button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
     .full { grid-column:1/-1; }
+    .input-action { display:flex; gap:8px; }
+    .input-action input { min-width:0; flex:1 1 auto; }
     .actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:20px; }
     .status { color:var(--muted); }
     .status.error { color:var(--bad); }
     .status.good { color:var(--good); }
+    .warning { margin:16px 0 0; padding:11px 13px; border:1px solid #88651f; border-radius:8px; background:#2b2415; color:var(--warning); }
     .hidden { display:none !important; }
+    details { margin-top:16px; border-top:1px solid var(--line); padding-top:14px; }
+    summary { color:#d8dbe0; cursor:pointer; font-weight:650; }
+    .summary-card { margin-top:20px; padding:16px; border:1px solid var(--line); border-radius:10px; background:var(--panel-2); }
+    .summary-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; margin:0; }
+    .summary-grid div { min-width:0; padding:10px 12px; border-left:1px solid var(--line); }
+    .summary-grid div:nth-child(4n+1) { border-left:0; }
+    .summary-grid dt { margin:0 0 3px; color:var(--muted); font-size:.76rem; letter-spacing:.04em; text-transform:uppercase; }
+    .summary-grid dd { margin:0; overflow-wrap:anywhere; font-weight:650; }
     #trial-screen { min-height:100vh; padding:12px; }
     .trial-header { display:grid; grid-template-columns:1fr auto 1fr; align-items:start; gap:12px; color:var(--muted); font-size:.9rem; }
     .trial-header .center { text-align:center; }
@@ -42,35 +57,115 @@
     #feedback { min-height:28px; text-align:center; font-weight:650; margin-top:10px; }
     .summary-table { width:100%; border-collapse:collapse; }
     .summary-table th,.summary-table td { padding:9px; border-bottom:1px solid var(--line); text-align:left; }
-    details { margin-top:14px; }
+    @media (max-width:760px) { .summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .summary-grid div:nth-child(4n+1) { border-left:1px solid var(--line); } .summary-grid div:nth-child(2n+1) { border-left:0; } }
     @media (max-width:650px) { .grid { grid-template-columns:1fr; } .full { grid-column:auto; } .trial-header { grid-template-columns:1fr auto; } .trial-header .center { display:none; } }
   </style>
 </head>
 <body>
   <main id="setup-screen" class="page">
     <h1>Advanced IR Ishihara</h1>
-    <p class="lede">A source-family generalisation task. The visible scaffold stays static; only the IR information is swept through three vOICe soundscapes.</p>
+    <p class="lede">Configure a source-family generalisation block. Compare carrier-controlled visual and IR trials, or run either channel as a standalone baseline.</p>
 
     <section class="panel">
-      <h2>Prepare block</h2>
+      <h2>Build a simulator block</h2>
       <div class="grid">
         <label>Participant ID<input id="participant-id" autocomplete="off" required></label>
-        <label>Source assignment<select id="split"><option value="train">Training sources</option><option value="test">Held-out test sources</option></select></label>
-        <label>Mode<select id="mode"><option value="visual-only">Visual-only baseline — silent</option><option value="mixed">Paired visible versus IR</option></select></label>
-        <label>Trials<input id="trial-count" type="number" min="4" max="96" step="2" value="12"></label>
-        <label>Response<select id="response-device"><option value="keyboard">Keyboard 1–4</option><option value="pointer">Pointer / click</option></select></label>
-        <label>Presentation<select id="presentation"><option value="expanded">Expanded — preserve 178:64</option><option value="compact">Compact native 712×256</option><option value="calibrated">Calibrated apparent size</option></select></label>
-        <label>Session seed<input id="seed" type="number" min="0" value="1729"></label>
-        <label>Display ID<input id="display-id" value="lab-monitor-01"></label>
+        <label>Source set
+          <select id="split">
+            <option value="train">Training set — 2/3 mappings (13/19 source families)</option>
+            <option value="test">Held-out test — 1/3 mappings (6/19 source families)</option>
+          </select>
+        </label>
+        <label>Signal design
+          <select id="signal-mode">
+            <optgroup label="Standard simulator modes">
+              <option value="mixed" selected>Mixed visual vs IR — carrier-controlled</option>
+              <option value="visual">Visual baseline — silent</option>
+              <option value="ir">IR only — audio diagnostic</option>
+            </optgroup>
+            <optgroup label="Advanced research mode">
+              <option value="paired">Repeated pair — same puzzle twice (research)</option>
+            </optgroup>
+          </select>
+          <span class="field-note">Mixed assigns each puzzle once: visual diagnostic + neutral carrier audio, or source scaffold + IR diagnostic audio.</span>
+        </label>
+        <label>Stimuli
+          <input id="base-stimulus-count" type="number" min="4" max="96" step="1" value="12">
+          <span class="field-note">Mixed mode presents each stimulus once. Repeated-pair research mode presents it twice.</span>
+        </label>
+        <label>Trial progression
+          <select id="progression">
+            <option value="mixed" selected>Shuffled — balanced difficulty range</option>
+            <option value="growing">Growing practice — simpler to harder</option>
+          </select>
+          <span class="field-note">Paired growing blocks use two difficulty-ordered passes.</span>
+        </label>
+        <label>Feedback
+          <select id="feedback-enabled">
+            <option value="off" selected>Off</option>
+            <option value="on">On</option>
+          </select>
+        </label>
+        <label>Response
+          <select id="response-device">
+            <option value="keyboard">Keyboard 1–4</option>
+            <option value="pointer">Pointer / click</option>
+          </select>
+        </label>
+        <label>Presentation
+          <select id="presentation">
+            <option value="expanded">Expanded — preserve 178:64</option>
+            <option value="compact">Compact native 712×256</option>
+            <option value="calibrated">Calibrated apparent size</option>
+          </select>
+        </label>
       </div>
-      <details id="calibration-fields">
-        <summary>Calibration</summary>
+
+      <p id="feedback-warning" class="warning hidden" role="status"></p>
+
+      <details id="advanced-fields">
+        <summary>Advanced block settings</summary>
         <div class="grid" style="margin-top:14px">
+          <label>Glyph composition
+            <select id="glyph-composition">
+              <option value="automatic">Automatic — balance 1, 2, and 3 glyphs</option>
+              <option value="1">Only 1 glyph</option>
+              <option value="2">Only 2 glyphs</option>
+              <option value="3">Only 3 glyphs</option>
+            </select>
+          </label>
+          <label>Reproducible run code
+            <span class="input-action"><input id="seed" type="number" min="0" max="4294967295" step="1" inputmode="numeric"><button id="new-seed-btn" class="small" type="button">New code</button></span>
+            <span class="field-note">Reuse this code to recreate the same stimuli and order.</span>
+          </label>
+        </div>
+      </details>
+
+      <details id="calibration-fields" class="hidden">
+        <summary>Display calibration</summary>
+        <div class="grid" style="margin-top:14px">
+          <label>Display ID<input id="display-id" value="lab-monitor-01"></label>
           <label>Physical display width (cm)<input id="display-width-cm" type="number" min="1" step="0.1"></label>
           <label>Viewing distance (cm)<input id="viewing-distance-cm" type="number" min="1" step="0.1"></label>
           <label>Target horizontal angle (°)<input id="target-angle-deg" type="number" min="1" max="170" step="0.1" value="50"></label>
         </div>
       </details>
+
+      <section class="summary-card" aria-labelledby="block-preview-heading">
+        <h3 id="block-preview-heading">Block preview</h3>
+        <dl class="summary-grid" aria-live="polite">
+          <div><dt>Stimuli</dt><dd id="preview-stimuli"></dd></div>
+          <div><dt>Presentations</dt><dd id="preview-presentations"></dd></div>
+          <div><dt>Glyph distribution</dt><dd id="preview-glyphs"></dd></div>
+          <div><dt>Conditions</dt><dd id="preview-conditions"></dd></div>
+          <div><dt>Estimated duration</dt><dd id="preview-duration"></dd></div>
+          <div><dt>Source</dt><dd id="preview-source"></dd></div>
+          <div><dt>Feedback</dt><dd id="preview-feedback"></dd></div>
+          <div><dt>Run code</dt><dd id="preview-run-code"></dd></div>
+        </dl>
+        <p class="field-note">Duration assumes a 2-second response time per presentation.</p>
+      </section>
+
       <div class="actions">
         <button id="prepare-btn" class="primary">Generate and preload block</button>
         <span id="prepare-status" class="status">No assets loaded.</span>
@@ -85,7 +180,7 @@
   <main id="trial-screen" class="hidden">
     <header class="trial-header">
       <div id="condition-status"></div>
-      <div class="center">Which interpretation did the complete multimodal stimulus specify?</div>
+      <div class="center">Which complete glyph did this stimulus specify?</div>
       <div id="trial-status" class="right"></div>
     </header>
     <div id="stage-shell">
@@ -112,6 +207,6 @@
   </main>
 
   <div id="boot-error" class="page hidden status error"></div>
-  <script type="module" src="app.js?v=advanced-1"></script>
+  <script type="module" src="app.js?v=advanced-3"></script>
 </body>
 </html>

@@ -2,6 +2,7 @@
 
 import {
   advancedCatalogCounts,
+  CATALOG_VERSION,
   DIRECT_EDGES,
   enumerateRawCombinations,
   GEOMETRIES,
@@ -17,6 +18,7 @@ if (format === 'summary') {
   process.stdout.write(`${JSON.stringify(advancedCatalogCounts(), null, 2)}\n`);
 } else if (format === 'grammar') {
   process.stdout.write(`${JSON.stringify({
+    catalogVersion: CATALOG_VERSION,
     counts: advancedCatalogCounts(),
     geometries: GEOMETRIES,
     directEdges: DIRECT_EDGES,

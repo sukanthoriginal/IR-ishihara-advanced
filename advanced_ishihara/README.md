@@ -109,10 +109,24 @@ session engine:
   positions as within-composite context;
 - supplies the target, the complete unchanged-source decoy, and the two closest
   same-family alternatives;
+- allocates automatic one-, two-, and three-glyph quotas as evenly as possible,
+  with reproducible remainder assignment;
+- records a versioned estimated structural-difficulty score and its raw
+  components for every stimulus;
 - generates and validates only the frozen session's assets;
-- pairs every visible composite with the corresponding IR composite in mixed
-  mode; and
-- RMS-matches the diagnostic and background-carrier WAVs within each pair.
+- supports silent visual, standalone IR-audio, distinct-stimulus mixed, and
+  repeated-stimulus paired comparison blocks;
+- assigns mixed stimuli to carrier-controlled visual-background and IR-audio
+  conditions without repeating a puzzle, provisionally matching within glyph
+  count and then by structural-difficulty features;
+- logs every mixed match, its structural-score gap, and condition balance by
+  glyph count and difficulty stratum (this structural matching is provisional,
+  not an empirically validated equivalence claim);
+- normalises each background carrier to a low fixed RMS and applies the same
+  gain to its probe counterfactual, preserving diagnostic contrast rather than
+  equalising the complete WAVs' total RMS, with a declared peak ceiling; and
+- counterbalances paired order while logging presentation order, pass, lag,
+  and displayed choice order.
 
 The final confirmatory protocol should freeze the foil-ranking rule, establish
 difficulty strata from pilot data, and decide whether identity-only sequences

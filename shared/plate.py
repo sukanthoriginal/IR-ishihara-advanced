@@ -155,7 +155,7 @@ def draw_symbol(
         "right-lower": (point(0.88, 0.50), point(0.88, 0.92)),
         "center": (point(0.50, 0.08), point(0.50, 0.92)),
         "right-leg": (point(0.50, 0.50), point(0.90, 0.92)),
-        "tail": (point(0.58, 0.67), point(0.96, 1.00)),
+        "tail": (point(0.58, 0.67), point(1.08, 1.08)),
         "vee-left": (point(0.10, 0.08), point(0.50, 0.52)),
         "vee-right": (point(0.90, 0.08), point(0.50, 0.52)),
         "x-lower-left": (point(0.50, 0.52), point(0.10, 0.96)),

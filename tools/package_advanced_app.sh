@@ -64,7 +64,7 @@ if [[ -x "$raspivoice_bin" ]]; then
   /bin/cp "$raspivoice_bin" "$runtime_dir/bin/raspivoice"
   /bin/chmod +x "$runtime_dir/bin/raspivoice"
 else
-  print "No raspivoice binary bundled; visual-only mode will still work."
+  print "No raspivoice binary bundled; silent visual mode will still work."
 fi
 
 /usr/bin/find "$runtime_dir" -name '__pycache__' -type d -prune -exec /bin/rm -rf {} +

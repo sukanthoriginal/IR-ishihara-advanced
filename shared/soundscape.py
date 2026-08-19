@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import subprocess
 import time
@@ -21,7 +22,9 @@ SAMPLES_PER_COLUMN = SAMPLE_COUNT // AUDIO_WIDTH
 EXPECTED_WAV_FRAMES = SAMPLE_COUNT
 RASPIVOICE_MAX_WAIT_S = 8.0
 RASPIVOICE_POLL_INTERVAL_S = 0.02
-TARGET_RMS_INT16 = 1_000.0
+CARRIER_TARGET_RMS_INT16 = 185.0
+PEAK_CEILING_DBFS = -3.0
+AUDIO_NORMALIZATION_METHOD = "carrier-referenced-shared-gain-v1"
 
 
 def default_raspivoice_bin(repo_root: Path) -> Path:
@@ -79,47 +82,128 @@ def validate_wav(path: Path) -> dict[str, int]:
 
 
 def wav_rms_int16(path: Path) -> float:
-    validate_wav(path)
-    with wave.open(str(path), "rb") as wav_file:
-        samples = np.frombuffer(wav_file.readframes(wav_file.getnframes()), dtype="<i2")
+    _params, samples = _read_wav_samples(path)
     values = samples.astype(np.float64)
     return float(np.sqrt(np.mean(values * values)))
 
 
-def normalize_wav_rms(
+def wav_peak_int16(path: Path) -> int:
+    _params, samples = _read_wav_samples(path)
+    return int(np.max(np.abs(samples.astype(np.int32))))
+
+
+def apply_carrier_referenced_gain(
     paths: list[Path] | tuple[Path, ...],
-    target_rms: float = TARGET_RMS_INT16,
-) -> dict[str, float]:
-    """Give matched soundscapes the same global RMS without changing timing."""
+    carrier_reference_path: Path,
+    carrier_target_rms: float = CARRIER_TARGET_RMS_INT16,
+    peak_ceiling_dbfs: float = PEAK_CEILING_DBFS,
+) -> dict:
+    """Scale a carrier and its counterfactual probe with one linear gain.
+
+    The carrier reference determines the gain for every path. This preserves
+    the diagnostic-to-carrier contrast instead of independently equalising the
+    total RMS of a sparse probe and a background-only carrier.
+    """
     if not paths:
-        return {}
-    if not 0 < target_rms < 32_768:
-        raise ValueError("target_rms must be between 0 and 32768")
-    measured = {}
+        raise ValueError("at least one soundscape is required")
+    paths = tuple(Path(path) for path in paths)
+    carrier_reference_path = Path(carrier_reference_path)
+    if len(set(paths)) != len(paths):
+        raise ValueError("soundscape paths must be unique")
+    if carrier_reference_path not in paths:
+        raise ValueError("carrier reference must be included in soundscape paths")
+    if not 0 < carrier_target_rms < 32_768:
+        raise ValueError("carrier_target_rms must be between 0 and 32768")
+    if not peak_ceiling_dbfs < 0:
+        raise ValueError("peak_ceiling_dbfs must be below 0 dBFS")
+
+    peak_ceiling_int16 = int(math.floor(
+        32_767 * (10 ** (peak_ceiling_dbfs / 20)),
+    ))
+    if carrier_target_rms >= peak_ceiling_int16:
+        raise ValueError("carrier target must be below the peak ceiling")
+
+    raw = {}
     for path in paths:
-        validate_wav(path)
-        with wave.open(str(path), "rb") as wav_file:
-            params = wav_file.getparams()
-            samples = np.frombuffer(
-                wav_file.readframes(wav_file.getnframes()), dtype="<i2",
-            ).astype(np.float64)
+        params, integer_samples = _read_wav_samples(path)
+        samples = integer_samples.astype(np.float64)
         source_rms = float(np.sqrt(np.mean(samples * samples)))
         if source_rms <= 0:
-            raise RuntimeError(f"cannot RMS-normalize silent soundscape: {path}")
-        scaled = np.rint(samples * (target_rms / source_rms))
-        scaled = np.clip(scaled, -32_768, 32_767).astype("<i2")
+            raise RuntimeError(f"cannot normalize silent soundscape: {path}")
+        raw[path] = {
+            "params": params,
+            "samples": samples,
+            "rms": source_rms,
+            "peak": int(np.max(np.abs(integer_samples.astype(np.int32)))),
+        }
+
+    raw_carrier_rms = raw[carrier_reference_path]["rms"]
+    requested_gain = carrier_target_rms / raw_carrier_rms
+    maximum_raw_peak = max(item["peak"] for item in raw.values())
+    peak_safe_gain = (
+        (peak_ceiling_int16 - 0.5) / maximum_raw_peak
+        if maximum_raw_peak else requested_gain
+    )
+    shared_gain = min(requested_gain, peak_safe_gain)
+    peak_limited = shared_gain < requested_gain
+    prepared = {}
+    for path in paths:
+        scaled = np.rint(raw[path]["samples"] * shared_gain)
+        scaled_peak = int(np.max(np.abs(scaled)))
+        if scaled_peak > peak_ceiling_int16:
+            raise RuntimeError(
+                f"carrier-referenced gain would exceed {peak_ceiling_dbfs:g} dBFS "
+                f"for {path}: peak={scaled_peak}, ceiling={peak_ceiling_int16}"
+            )
+        prepared[path] = scaled.astype("<i2")
+
+    measured = {}
+    for path in paths:
         with wave.open(str(path), "wb") as wav_file:
-            wav_file.setparams(params)
-            wav_file.writeframes(scaled.tobytes())
+            wav_file.setparams(raw[path]["params"])
+            wav_file.writeframes(prepared[path].tobytes())
         validate_wav(path)
         final_rms = wav_rms_int16(path)
-        if abs(final_rms - target_rms) > 1.0:
-            raise RuntimeError(
-                f"RMS normalization exceeded tolerance for {path}: "
-                f"target={target_rms}, measured={final_rms}"
-            )
-        measured[path.name] = final_rms
-    return measured
+        final_peak = wav_peak_int16(path)
+        if final_peak > peak_ceiling_int16:
+            raise RuntimeError(f"normalized soundscape exceeds peak ceiling: {path}")
+        measured[path.name] = {
+            "raw_rms_int16": raw[path]["rms"],
+            "final_rms_int16": final_rms,
+            "raw_peak_int16": raw[path]["peak"],
+            "final_peak_int16": final_peak,
+        }
+
+    final_carrier_rms = measured[carrier_reference_path.name]["final_rms_int16"]
+    if not peak_limited and abs(final_carrier_rms - carrier_target_rms) > 1.0:
+        raise RuntimeError(
+            "carrier normalization exceeded tolerance: "
+            f"target={carrier_target_rms}, measured={final_carrier_rms}"
+        )
+    if final_carrier_rms > carrier_target_rms + 1.0:
+        raise RuntimeError("carrier normalization exceeded its target")
+    return {
+        "method": AUDIO_NORMALIZATION_METHOD,
+        "carrier_target_rms_int16": carrier_target_rms,
+        "raw_carrier_rms_int16": raw_carrier_rms,
+        "requested_gain_linear": requested_gain,
+        "shared_gain_linear": shared_gain,
+        "shared_gain_db": 20 * math.log10(shared_gain),
+        "peak_limited": peak_limited,
+        "peak_ceiling_dbfs": peak_ceiling_dbfs,
+        "peak_ceiling_int16": peak_ceiling_int16,
+        "files": measured,
+    }
+
+
+def _read_wav_samples(path: Path) -> tuple[object, np.ndarray]:
+    validate_wav(path)
+    with wave.open(str(path), "rb") as wav_file:
+        params = wav_file.getparams()
+        samples = np.frombuffer(
+            wav_file.readframes(wav_file.getnframes()), dtype="<i2",
+        ).copy()
+    return params, samples
 
 
 def generate_soundscape(
