@@ -749,6 +749,7 @@ class LocalParticipantHttpTests(unittest.TestCase):
             session_root = temp_root / "sessions"
             result_root = temp_root / "results"
             later_result_root = temp_root / "later-results"
+            mirror_result_root = temp_root / "mirror-results"
             repo_root.mkdir()
             session_root.mkdir()
             result_root.mkdir()
@@ -758,7 +759,9 @@ class LocalParticipantHttpTests(unittest.TestCase):
             (grammar_root / "grammar_snapshot.json").write_text(
                 json.dumps(load_grammar(ROOT)),
             )
-            handler = make_handler(repo_root, data_root, session_root)
+            handler = make_handler(
+                repo_root, data_root, session_root, mirror_result_root,
+            )
             handler.log_message = lambda *_args: None
             server = LocalThreadingServer(("127.0.0.1", 0), handler)
             thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -885,6 +888,17 @@ class LocalParticipantHttpTests(unittest.TestCase):
                     (result_root / "pilot.csv").read_text(),
                     "participant_id\nP-http\n",
                 )
+                self.assertEqual(
+                    (mirror_result_root / "pilot.csv").read_text(),
+                    "participant_id\nP-http\n",
+                )
+                self.assertEqual(
+                    saved["paths"],
+                    [
+                        str((result_root / "pilot.csv").resolve()),
+                        str((mirror_result_root / "pilot.csv").resolve()),
+                    ],
+                )
                 second_save = self.post_json(base_url + "/api/save-run", {
                     "participantId": "P-http",
                     "sessionId": session_id,
@@ -901,6 +915,10 @@ class LocalParticipantHttpTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     (result_root / "pilot_2.csv").read_text(), "second\nrun\n",
+                )
+                self.assertEqual(
+                    (mirror_result_root / "pilot_2.csv").read_text(),
+                    "second\nrun\n",
                 )
                 self.assertFalse((later_result_root / "pilot.csv").exists())
 

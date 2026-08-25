@@ -13,6 +13,7 @@ chrome_app="/Applications/Google Chrome.app"
 server_log="/tmp/advanced_ishihara_server.log"
 launcher_log="/tmp/advanced_ishihara_launcher.log"
 data_root="${HOME}/Library/Application Support/Advanced IR Ishihara"
+mirror_data_dir="${HOME}/Dev/Lossfunk/ir-results/ishihara-advanced"
 
 exec >>"$launcher_log" 2>&1
 print "$(/bin/date -u '+%Y-%m-%dT%H:%M:%SZ') launcher invoked"
@@ -35,14 +36,16 @@ fi
 
 listener_pid="$(/usr/sbin/lsof -tiTCP:"$server_port" -sTCP:LISTEN 2>/dev/null || true)"
 if [[ -z "$listener_pid" ]]; then
-  /bin/mkdir -p "$data_root/test_data" "$data_root/session_cache"
+  /bin/mkdir -p "$data_root/test_data" "$data_root/session_cache" "$mirror_data_dir"
   cd "$runtime_dir" || exit 1
   if [[ -x "$runtime_dir/bin/raspivoice" ]]; then
     export RASPIVOICE_BIN="$runtime_dir/bin/raspivoice"
   fi
+  PYTHONDONTWRITEBYTECODE=1 \
   ADVANCED_ISHIHARA_TEST_DATA_DIR="$data_root/test_data" \
+  ADVANCED_ISHIHARA_MIRROR_DATA_DIR="$mirror_data_dir" \
   ADVANCED_ISHIHARA_SESSION_DIR="$data_root/session_cache" \
-  nohup "$python_bin" server.py "$server_port" >"$server_log" 2>&1 </dev/null &
+  nohup "$python_bin" -B server.py "$server_port" >"$server_log" 2>&1 </dev/null &
 fi
 
 if ! wait_for_page "$app_url" "$expected_text" 40; then

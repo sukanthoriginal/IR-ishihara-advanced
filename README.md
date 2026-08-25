@@ -156,6 +156,10 @@ separately in `session_cache/`. In a source checkout, the corresponding paths
 are `test_data/` and `advanced_sessions/`. These local participant and generated
 files are ignored by Git and are never committed.
 
+The packaged launcher also mirrors every completed CSV, with the same filename
+and bytes, into `/Users/sukanth/Dev/Lossfunk/ir-results/ishihara-advanced/`.
+The original selected results directory remains the primary copy.
+
 ## Source-wise train/test split
 
 All outcomes of a source stay in one assignment. A test source and its identity

@@ -29,9 +29,15 @@ SAFE_NAME = re.compile(r"[^A-Za-z0-9_.-]+")
 MAX_BODY_BYTES = 20_000_000
 
 
-def make_handler(repo_root: Path, test_data_dir: Path, session_dir: Path):
+def make_handler(
+    repo_root: Path,
+    test_data_dir: Path,
+    session_dir: Path,
+    mirror_data_dir: Path | None = None,
+):
     repo_root = repo_root.resolve()
     session_root = session_dir.resolve()
+    mirror_root = mirror_data_dir.resolve() if mirror_data_dir else None
     local_state = LocalParticipantState(test_data_dir, test_data_dir, repo_root)
 
     class Handler(http.server.SimpleHTTPRequestHandler):
@@ -161,14 +167,24 @@ def make_handler(repo_root: Path, test_data_dir: Path, session_dir: Path):
                 destination = self._write_csv_without_overwrite(
                     save_directory, safe_name, csv_text,
                 )
+                mirror_destination = self._write_csv_mirror(
+                    mirror_root, destination, csv_text,
+                )
             except OSError as error:
-                self._write_json(500, {"error": f"Could not save CSV: {error}"})
+                self._write_json(500, {
+                    "error": f"Could not save every CSV copy: {error}",
+                })
                 return
-            self._write_json(200, {
+            response = {
                 "saved": True,
                 "path": str(destination),
+                "paths": [str(destination)],
                 "saveDirectory": str(save_directory),
-            })
+            }
+            if mirror_destination is not None:
+                response["mirrorPath"] = str(mirror_destination)
+                response["paths"].append(str(mirror_destination))
+            self._write_json(200, response)
 
         def _prepare_session(self):
             try:
@@ -505,6 +521,26 @@ def make_handler(repo_root: Path, test_data_dir: Path, session_dir: Path):
                     continue
             raise OSError("too many files use this result filename")
 
+        @staticmethod
+        def _write_csv_mirror(
+            mirror_root: Path | None,
+            source_destination: Path,
+            csv_text: str,
+        ) -> Path | None:
+            if mirror_root is None or mirror_root == source_destination.parent.resolve():
+                return None
+            mirror_root.mkdir(parents=True, exist_ok=True)
+            destination = mirror_root / source_destination.name
+            try:
+                with destination.open("x", newline="") as output:
+                    output.write(csv_text)
+            except FileExistsError:
+                if destination.read_text() != csv_text:
+                    raise OSError(
+                        f"mirror filename collision with different contents: {destination}",
+                    )
+            return destination
+
         def _write_json(self, status: int, payload: dict):
             body = json.dumps(payload).encode()
             self.send_response(status)
@@ -528,13 +564,17 @@ def main(repo_root: Path | None = None) -> None:
         "ADVANCED_ISHIHARA_TEST_DATA_DIR",
         root / "test_data",
     ))
+    mirror_data_value = os.environ.get("ADVANCED_ISHIHARA_MIRROR_DATA_DIR")
+    mirror_data_dir = Path(mirror_data_value) if mirror_data_value else None
     session_dir = Path(os.environ.get(
         "ADVANCED_ISHIHARA_SESSION_DIR",
         root / "advanced_sessions",
     ))
-    handler = make_handler(root, test_data_dir, session_dir)
+    handler = make_handler(root, test_data_dir, session_dir, mirror_data_dir)
     with LocalThreadingServer(("127.0.0.1", port), handler) as server:
         print(f"Advanced IR-Ishihara: http://127.0.0.1:{port}/advanced/")
         print(f"CSV output: {test_data_dir}")
+        if mirror_data_dir is not None:
+            print(f"CSV mirror: {mirror_data_dir}")
         print(f"Session cache: {session_dir}")
         server.serve_forever()
