@@ -249,6 +249,7 @@ class AdvancedWebStaticTests(unittest.TestCase):
             "aligned_visual_carrier_version",
             "aligned_visual_density_equivalence_version",
             "aligned_visual_pair_axis",
+            "aligned_visual_dot_pitch_pixels",
             "aligned_visual_pair_offset_pixels",
             "aligned_visual_subdot_radii_json",
             "aligned_visual_carrier_dot_count",

@@ -130,7 +130,8 @@ session engine:
 - renders all four conditions on one balanced diagonal-dyad carrier; channel B
   is a bijective one-cell copy of channel A, giving exact equality of channel
   token count, radius histogram, nominal area, and active raster-pixel count
-  without introducing half-dot or density cues;
+  without introducing half-dot or density cues; the fine carrier uses a
+  12-pixel plate pitch mapped exactly to three audio-mask columns;
 - assigns mixed stimuli to carrier-controlled visual-background and IR-audio
   conditions without repeating a puzzle, provisionally matching within glyph
   count and then by structural-difficulty features;

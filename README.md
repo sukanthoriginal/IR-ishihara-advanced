@@ -52,8 +52,8 @@ nominal area, and active raster-pixel count. Neutral carrier replaces a signal
 colour without changing this dyad texture. Thus red-only and cyan-only
 isolation each preserves the full identity without any half-dot or density
 cue, and all four conditions share the same carrier. The ratio is configurable under
-Advanced block settings. One dot is the plate's 16-pixel dot pitch, equal to
-four pixels in the 178×64 audio mask; translations are seeded left or right
+Advanced block settings. Fine aligned plates use a 12-pixel dot pitch, equal to
+three pixels in the 178×64 audio mask; translations are seeded left or right
 and rejected if they crop any target geometry.
 
 Each background carrier is normalized to a low fixed RMS, and that exact

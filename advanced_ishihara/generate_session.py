@@ -25,7 +25,11 @@ if str(REPO_ROOT) not in sys.path:
 from shared.plate import (
     ALIGNED_DISPLACEMENT_AUDIO_PIXELS,
     ALIGNED_VISUAL_CARRIER_VERSION,
+    ALIGNED_VISUAL_CARRIER_DOT_COUNT,
+    ALIGNED_VISUAL_CARRIER_OCCUPIED_PIXEL_COUNT,
+    ALIGNED_VISUAL_CARRIER_RADIUS_HISTOGRAM,
     ALIGNED_VISUAL_DENSITY_EQUIVALENCE_VERSION,
+    ALIGNED_VISUAL_DOT_STEP,
     ALIGNED_VISUAL_PAIR_AXIS,
     ALIGNED_VISUAL_PAIR_OFFSET_PIXELS,
     ALIGNED_VISUAL_SUBDOT_RADII,
@@ -56,7 +60,7 @@ from shared.soundscape import (
 )
 
 SCHEMA_VERSION = 7
-RENDER_VERSION = 5
+RENDER_VERSION = 6
 AUDIO_RENDER_VERSION = 2
 DIFFICULTY_MODEL_VERSION = "estimated-v1"
 DIFFICULTY_COMPONENT_NAMES = (
@@ -2543,19 +2547,25 @@ def manifest_is_complete(manifest: dict, root: Path) -> bool:
                 != ALIGNED_VISUAL_DENSITY_EQUIVALENCE_VERSION
                 or stimulus.get("aligned_visual_pair_axis")
                 != ALIGNED_VISUAL_PAIR_AXIS
+                or stimulus.get("aligned_visual_dot_pitch_pixels")
+                != ALIGNED_VISUAL_DOT_STEP
                 or stimulus.get("aligned_visual_pair_offset_pixels")
                 != ALIGNED_VISUAL_PAIR_OFFSET_PIXELS
                 or stimulus.get("aligned_visual_subdot_radii")
                 != list(ALIGNED_VISUAL_SUBDOT_RADII)
                 or not isinstance(carrier_a_histogram, dict)
                 or carrier_a_histogram != carrier_b_histogram
+                or carrier_a_histogram
+                != ALIGNED_VISUAL_CARRIER_RADIUS_HISTOGRAM
                 or sum(carrier_a_histogram.values())
                 != stimulus.get("aligned_visual_carrier_dot_count")
+                or stimulus.get("aligned_visual_carrier_dot_count")
+                != ALIGNED_VISUAL_CARRIER_DOT_COUNT
                 or stimulus.get("aligned_visual_subdot_count")
                 != stimulus.get("aligned_visual_carrier_dot_count", 0) * 2
                 or stimulus.get(
                     "aligned_visual_carrier_occupied_pixel_count", 0,
-                ) <= 0
+                ) != ALIGNED_VISUAL_CARRIER_OCCUPIED_PIXEL_COUNT
                 or not stimulus.get("balanced_carrier_occupancy_sha256")
                 or stimulus.get("balanced_visual_source_dot_count", 0) <= 0
                 or stimulus.get("visible_signal_dot_count")

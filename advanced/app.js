@@ -1693,6 +1693,7 @@ async function recordChoice(choice, responsePosition, responseInputMethod) {
       stimulus.aligned_visual_density_equivalence_version
     ),
     aligned_visual_pair_axis: stimulus.aligned_visual_pair_axis,
+    aligned_visual_dot_pitch_pixels: stimulus.aligned_visual_dot_pitch_pixels,
     aligned_visual_pair_offset_pixels: stimulus.aligned_visual_pair_offset_pixels,
     aligned_visual_subdot_radii_json: JSON.stringify(
       stimulus.aligned_visual_subdot_radii ?? null,
@@ -2192,7 +2193,8 @@ const CSV_COLUMNS = [
   'aligned_visual_base_dot_count', 'aligned_visual_shifted_dot_count',
   'aligned_visual_overlap_dot_count', 'alignment_equivalence_version',
   'aligned_visual_carrier_version', 'aligned_visual_density_equivalence_version',
-  'aligned_visual_pair_axis', 'aligned_visual_pair_offset_pixels',
+  'aligned_visual_pair_axis', 'aligned_visual_dot_pitch_pixels',
+  'aligned_visual_pair_offset_pixels',
   'aligned_visual_subdot_radii_json',
   'aligned_visual_carrier_dot_count', 'aligned_visual_subdot_count',
   'aligned_visual_carrier_radius_histogram_json',

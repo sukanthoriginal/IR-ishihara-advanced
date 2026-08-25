@@ -16,7 +16,11 @@ from shared import soundscape
 from shared.plate import (
     ALIGNED_DISPLACEMENT_AUDIO_PIXELS,
     ALIGNED_VISUAL_CARRIER_VERSION,
+    ALIGNED_VISUAL_CARRIER_DOT_COUNT,
+    ALIGNED_VISUAL_CARRIER_OCCUPIED_PIXEL_COUNT,
+    ALIGNED_VISUAL_CARRIER_RADIUS_HISTOGRAM,
     ALIGNED_VISUAL_DENSITY_EQUIVALENCE_VERSION,
+    ALIGNED_VISUAL_DOT_STEP,
     ALIGNED_VISUAL_PAIR_AXIS,
     ALIGNED_VISUAL_PAIR_OFFSET_PIXELS,
     ALIGNED_VISUAL_SUBDOT_RADII,
@@ -482,6 +486,25 @@ class AdvancedGeneratorTests(unittest.TestCase):
                 assets["aligned_visual_pair_axis"], ALIGNED_VISUAL_PAIR_AXIS,
             )
             self.assertEqual(
+                assets["aligned_visual_dot_pitch_pixels"],
+                ALIGNED_VISUAL_DOT_STEP,
+            )
+            self.assertEqual(
+                assets["aligned_visual_carrier_dot_count"],
+                ALIGNED_VISUAL_CARRIER_DOT_COUNT,
+            )
+            self.assertEqual(
+                assets["aligned_visual_carrier_radius_histogram"],
+                {
+                    "channel_a": ALIGNED_VISUAL_CARRIER_RADIUS_HISTOGRAM,
+                    "channel_b": ALIGNED_VISUAL_CARRIER_RADIUS_HISTOGRAM,
+                },
+            )
+            self.assertEqual(
+                assets["aligned_visual_carrier_occupied_pixel_count"],
+                ALIGNED_VISUAL_CARRIER_OCCUPIED_PIXEL_COUNT,
+            )
+            self.assertEqual(
                 assets["aligned_visual_pair_offset_pixels"],
                 ALIGNED_VISUAL_PAIR_OFFSET_PIXELS,
             )
@@ -527,8 +550,7 @@ class AdvancedGeneratorTests(unittest.TestCase):
             )
 
     def test_aligned_visual_uses_bijective_complete_subdots_with_exact_density(self):
-        layout_rng = np.random.default_rng(17)
-        dots = plate_renderer.make_dot_layout(layout_rng)
+        dots = plate_renderer.make_aligned_dot_layout()
         target = plate_renderer.draw_geometry_mask(["zero-o"])
         canonical, canonical_stats = plate_renderer._draw_balanced_dyad_plate(
             dots,
@@ -1073,6 +1095,18 @@ class AdvancedGeneratorTests(unittest.TestCase):
                 aligned_manifest, aligned_path.parent,
             ))
             identity_stimulus["aligned_visual_carrier_version"] = original_carrier
+            original_pixels = identity_stimulus[
+                "aligned_visual_carrier_occupied_pixel_count"
+            ]
+            identity_stimulus[
+                "aligned_visual_carrier_occupied_pixel_count"
+            ] = original_pixels - 1
+            self.assertFalse(generator.manifest_is_complete(
+                aligned_manifest, aligned_path.parent,
+            ))
+            identity_stimulus[
+                "aligned_visual_carrier_occupied_pixel_count"
+            ] = original_pixels
             complementary = next(
                 item for item in aligned_manifest["stimuli"]
                 if item["assigned_condition"] == "ir_audio"

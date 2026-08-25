@@ -15,7 +15,10 @@ PLATE_SCALE = 4
 PLATE_WIDTH = AUDIO_WIDTH * PLATE_SCALE
 PLATE_HEIGHT = AUDIO_HEIGHT * PLATE_SCALE
 DOT_STEP = 16
-ALIGNED_DISPLACEMENT_AUDIO_PIXELS = DOT_STEP // PLATE_SCALE
+ALIGNED_VISUAL_DOT_STEP = 12
+ALIGNED_DISPLACEMENT_AUDIO_PIXELS = (
+    ALIGNED_VISUAL_DOT_STEP // PLATE_SCALE
+)
 
 GEOMETRY_SEGMENTS: dict[str, tuple[str, ...]] = {
     "one": ("right-upper", "right-lower"),
@@ -94,11 +97,39 @@ ALIGNED_VISUAL_COLOURS = (
 BACKGROUND_COLOUR = (54, 56, 58)
 CANONICAL_TARGET_COLOUR = (220, 62, 68)
 ALIGNED_TARGET_COLOUR = (70, 205, 220)
-ALIGNED_VISUAL_CARRIER_VERSION = "balanced-bijective-diagonal-dyads-v2"
-ALIGNED_VISUAL_DENSITY_EQUIVALENCE_VERSION = "exact-token-radius-area-v1"
+ALIGNED_VISUAL_CARRIER_VERSION = "fine-bijective-diagonal-dyads-v3"
+ALIGNED_VISUAL_DENSITY_EQUIVALENCE_VERSION = "exact-fine-grid-token-area-v2"
 ALIGNED_VISUAL_PAIR_AXIS = "seeded-diagonal"
-ALIGNED_VISUAL_PAIR_OFFSET_PIXELS = 3
-ALIGNED_VISUAL_SUBDOT_RADII = (3, 4)
+ALIGNED_VISUAL_PAIR_OFFSET_PIXELS = 2
+ALIGNED_VISUAL_SUBDOT_RADII = (2, 3)
+ALIGNED_VISUAL_GRID_COLUMNS = len(range(
+    ALIGNED_VISUAL_DOT_STEP // 2,
+    PLATE_WIDTH,
+    ALIGNED_VISUAL_DOT_STEP,
+))
+ALIGNED_VISUAL_GRID_ROWS = len(range(
+    ALIGNED_VISUAL_DOT_STEP // 2,
+    PLATE_HEIGHT,
+    ALIGNED_VISUAL_DOT_STEP,
+))
+ALIGNED_VISUAL_CARRIER_DOT_COUNT = (
+    ALIGNED_VISUAL_GRID_COLUMNS * ALIGNED_VISUAL_GRID_ROWS
+)
+_ALIGNED_PHASE_ZERO_ROWS = (ALIGNED_VISUAL_GRID_ROWS + 1) // 2
+_ALIGNED_PHASE_ONE_ROWS = ALIGNED_VISUAL_GRID_ROWS // 2
+_ALIGNED_SMALL_PER_PHASE_ZERO_ROW = (ALIGNED_VISUAL_GRID_COLUMNS + 1) // 2
+_ALIGNED_SMALL_PER_PHASE_ONE_ROW = ALIGNED_VISUAL_GRID_COLUMNS // 2
+_ALIGNED_SMALL_RADIUS_COUNT = (
+    _ALIGNED_PHASE_ZERO_ROWS * _ALIGNED_SMALL_PER_PHASE_ZERO_ROW
+    + _ALIGNED_PHASE_ONE_ROWS * _ALIGNED_SMALL_PER_PHASE_ONE_ROW
+)
+ALIGNED_VISUAL_CARRIER_RADIUS_HISTOGRAM = {
+    str(ALIGNED_VISUAL_SUBDOT_RADII[0]): _ALIGNED_SMALL_RADIUS_COUNT,
+    str(ALIGNED_VISUAL_SUBDOT_RADII[1]): (
+        ALIGNED_VISUAL_CARRIER_DOT_COUNT - _ALIGNED_SMALL_RADIUS_COUNT
+    ),
+}
+ALIGNED_VISUAL_CARRIER_OCCUPIED_PIXEL_COUNT = 71_816
 PLATE_BACKGROUND_COLOUR = (31, 32, 33)
 
 
@@ -233,6 +264,16 @@ def make_dot_layout(rng: np.random.Generator) -> list[tuple[int, int, int]]:
     return dots
 
 
+def make_aligned_dot_layout() -> list[tuple[int, int, int]]:
+    """Return the exact fine-grid samples used only by aligned mixed plates."""
+    first = ALIGNED_VISUAL_DOT_STEP // 2
+    return [
+        (x, y, max(ALIGNED_VISUAL_SUBDOT_RADII))
+        for y in range(first, PLATE_HEIGHT, ALIGNED_VISUAL_DOT_STEP)
+        for x in range(first, PLATE_WIDTH, ALIGNED_VISUAL_DOT_STEP)
+    ]
+
+
 def render_trial_images(
     source_ids: list[str],
     target_ids: list[str],
@@ -269,8 +310,9 @@ def render_trial_images(
         )
         aligned_dy = 0
     if include_balanced_carrier_assets or include_aligned_assets:
+        aligned_dots = make_aligned_dot_layout()
         balanced_source_plate, balanced_source_stats = _draw_balanced_dyad_plate(
-            dots,
+            aligned_dots,
             source_position_masks,
             SOURCE_COLOURS,
             np.random.default_rng(plate_colour_seed),
@@ -281,14 +323,14 @@ def render_trial_images(
             target_mask, aligned_dx, aligned_dy,
         )
         canonical_visual_plate, canonical_stats = _draw_balanced_dyad_plate(
-            dots,
+            aligned_dots,
             [target_mask],
             (CANONICAL_TARGET_COLOUR,),
             np.random.default_rng(plate_colour_seed),
             shift_audio_dx=aligned_dx,
         )
         aligned_visual_plate, aligned_stats = _draw_balanced_dyad_plate(
-            dots,
+            aligned_dots,
             [target_mask],
             (CANONICAL_TARGET_COLOUR,),
             np.random.default_rng(plate_colour_seed),
@@ -354,6 +396,7 @@ def render_trial_images(
                 ALIGNED_VISUAL_DENSITY_EQUIVALENCE_VERSION
             ),
             "aligned_visual_pair_axis": ALIGNED_VISUAL_PAIR_AXIS,
+            "aligned_visual_dot_pitch_pixels": ALIGNED_VISUAL_DOT_STEP,
             "aligned_visual_pair_offset_pixels": (
                 ALIGNED_VISUAL_PAIR_OFFSET_PIXELS
             ),
@@ -527,11 +570,11 @@ def _draw_plate(
 
 def _dot_cell_key(x: int, y: int) -> tuple[int, int]:
     """Recover the stable grid cell underlying one jittered parent dot."""
-    first = DOT_STEP // 2
-    column_count = len(range(first, PLATE_WIDTH, DOT_STEP))
-    row_count = len(range(first, PLATE_HEIGHT, DOT_STEP))
-    column = int(round((x - first) / DOT_STEP))
-    row = int(round((y - first) / DOT_STEP))
+    first = ALIGNED_VISUAL_DOT_STEP // 2
+    column_count = len(range(first, PLATE_WIDTH, ALIGNED_VISUAL_DOT_STEP))
+    row_count = len(range(first, PLATE_HEIGHT, ALIGNED_VISUAL_DOT_STEP))
+    column = int(round((x - first) / ALIGNED_VISUAL_DOT_STEP))
+    row = int(round((y - first) / ALIGNED_VISUAL_DOT_STEP))
     return (
         int(np.clip(column, 0, column_count - 1)),
         int(np.clip(row, 0, row_count - 1)),
@@ -577,9 +620,9 @@ def _draw_balanced_dyad_plate(
     if len(channel_a_colours) < len(channel_a_masks):
         raise ValueError("each channel-A mask requires one colour")
     shift_plate_pixels = shift_audio_dx * PLATE_SCALE
-    if shift_plate_pixels % DOT_STEP != 0:
+    if shift_plate_pixels % ALIGNED_VISUAL_DOT_STEP != 0:
         raise ValueError("aligned displacement must be a whole carrier cell")
-    shift_cells = shift_plate_pixels // DOT_STEP
+    shift_cells = shift_plate_pixels // ALIGNED_VISUAL_DOT_STEP
     if abs(shift_cells) != 1:
         raise ValueError("balanced dyad carrier requires a one-cell shift")
     geometry_rng = np.random.default_rng(
@@ -589,9 +632,9 @@ def _draw_balanced_dyad_plate(
         int(rng.integers(0, 2**32, dtype=np.uint32)),
     )
 
-    first = DOT_STEP // 2
-    columns = tuple(range(first, PLATE_WIDTH, DOT_STEP))
-    rows = tuple(range(first, PLATE_HEIGHT, DOT_STEP))
+    first = ALIGNED_VISUAL_DOT_STEP // 2
+    columns = tuple(range(first, PLATE_WIDTH, ALIGNED_VISUAL_DOT_STEP))
+    rows = tuple(range(first, PLATE_HEIGHT, ALIGNED_VISUAL_DOT_STEP))
     dot_by_cell = {
         _dot_cell_key(x, y): (x, y, radius) for x, y, radius in dots
     }
@@ -604,15 +647,19 @@ def _draw_balanced_dyad_plate(
         for row in range(len(rows))
         for column in range(len(columns))
     ]
-    if (
-        len(ALIGNED_VISUAL_SUBDOT_RADII) != 2
-        or len(columns) % 2
-    ):
-        raise RuntimeError("balanced radius alternation requires two radii and even columns")
+    if len(ALIGNED_VISUAL_SUBDOT_RADII) != 2:
+        raise RuntimeError("balanced radius alternation requires two radii")
     small_radius, large_radius = ALIGNED_VISUAL_SUBDOT_RADII
-    row_phase = {
-        row: int(geometry_rng.integers(0, 2)) for row in range(len(rows))
-    }
+    row_phases = [
+        phase
+        for phase, count in (
+            (0, (len(rows) + 1) // 2),
+            (1, len(rows) // 2),
+        )
+        for _index in range(count)
+    ]
+    geometry_rng.shuffle(row_phases)
+    row_phase = dict(enumerate(row_phases))
     channel_a_radius = {
         (column, row): (
             small_radius
@@ -661,7 +708,10 @@ def _draw_balanced_dyad_plate(
         b_radius = channel_b_radius[cell]
         safe_jitter = max(
             0,
-            7 - ALIGNED_VISUAL_PAIR_OFFSET_PIXELS - max(a_radius, b_radius),
+            ALIGNED_VISUAL_DOT_STEP // 2
+            - 1
+            - ALIGNED_VISUAL_PAIR_OFFSET_PIXELS
+            - max(a_radius, b_radius),
         )
         centre_x = nominal_x + int(np.clip(
             round((original_x - nominal_x) / 5), -safe_jitter, safe_jitter,
@@ -734,14 +784,25 @@ def _draw_balanced_dyad_plate(
     channel_b_values = np.asarray(channel_b_active_mask) > 0
     all_a_radii = list(channel_a_radius.values())
     all_b_radii = list(channel_b_radius.values())
+    carrier_a_histogram = _radius_histogram(all_a_radii)
+    carrier_b_histogram = _radius_histogram(all_b_radii)
+    carrier_occupied_pixel_count = int(np.count_nonzero(carrier_values))
+    if (
+        expected_cells != ALIGNED_VISUAL_CARRIER_DOT_COUNT
+        or carrier_a_histogram != ALIGNED_VISUAL_CARRIER_RADIUS_HISTOGRAM
+        or carrier_b_histogram != ALIGNED_VISUAL_CARRIER_RADIUS_HISTOGRAM
+        or carrier_occupied_pixel_count
+        != ALIGNED_VISUAL_CARRIER_OCCUPIED_PIXEL_COUNT
+    ):
+        raise RuntimeError("fine aligned carrier violates its density contract")
     return plate, {
         "carrier_dot_count": expected_cells,
         "subdot_count": expected_cells * 2,
         "carrier_radius_histogram": {
-            "channel_a": _radius_histogram(all_a_radii),
-            "channel_b": _radius_histogram(all_b_radii),
+            "channel_a": carrier_a_histogram,
+            "channel_b": carrier_b_histogram,
         },
-        "carrier_occupied_pixel_count": int(np.count_nonzero(carrier_values)),
+        "carrier_occupied_pixel_count": carrier_occupied_pixel_count,
         "carrier_occupancy_sha256": mask_digest(carrier_mask),
         "channel_a_dot_count": len(channel_a_active_radii),
         "channel_b_dot_count": len(channel_b_active_radii),
