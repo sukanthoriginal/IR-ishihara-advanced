@@ -83,6 +83,10 @@ class AdvancedWebStaticTests(unittest.TestCase):
             self.html,
         )
         self.assertIn(
+            '<option value="glyph-growing">Glyph staircase — 1→2→3, conditions shuffled</option>',
+            self.html,
+        )
+        self.assertIn(
             '<option value="growing" selected>Growing practice — simpler to harder</option>',
             self.html,
         )

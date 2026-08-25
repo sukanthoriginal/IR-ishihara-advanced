@@ -120,9 +120,10 @@
         <label>Trial progression
           <select id="progression">
             <option value="mixed">Shuffled — balanced difficulty range</option>
+            <option value="glyph-growing">Glyph staircase — 1→2→3, conditions shuffled</option>
             <option value="growing" selected>Growing practice — simpler to harder</option>
           </select>
-          <span class="field-note">Paired growing blocks use two difficulty-ordered passes.</span>
+          <span class="field-note">Glyph staircase changes only glyph count; identity, aligned, and complementary conditions remain shuffled inside each tier. Paired growing blocks use two ordered passes.</span>
         </label>
         <label>Feedback
           <select id="feedback-enabled">

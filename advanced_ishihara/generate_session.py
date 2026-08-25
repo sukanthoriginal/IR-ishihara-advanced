@@ -87,6 +87,7 @@ ALIGNED_MIXED_CONDITIONS = (
 ALIGNED_IDENTITY_CONDITIONS = ALIGNED_MIXED_CONDITIONS[:3]
 ALIGNED_COMPLEMENTARY_CONDITION = ALIGNED_MIXED_CONDITIONS[3]
 DEFAULT_ALIGNED_MIXED_RATIO = (1, 1, 1, 2)
+PROGRESSION_MODES = ("growing", "glyph-growing", "mixed")
 
 
 def load_grammar(repo_root: Path = REPO_ROOT) -> dict:
@@ -175,8 +176,10 @@ def normalize_settings(settings: dict) -> dict:
         raise ValueError("glyphComposition must be automatic, 1, 2, or 3")
 
     progression = settings.get("progression", "growing")
-    if progression not in {"growing", "mixed"}:
-        raise ValueError("progression must be growing or mixed")
+    if progression not in PROGRESSION_MODES:
+        raise ValueError(
+            "progression must be growing, glyph-growing, or mixed"
+        )
 
     feedback_enabled = settings.get("feedbackEnabled", True)
     if not isinstance(feedback_enabled, bool):
@@ -2165,10 +2168,14 @@ def make_schedule(stimuli: list[dict], settings: dict, rng: random.Random) -> li
             item.get("transformation_signature", item["stimulus_id"]),
             item["stimulus_id"],
         ))
+    elif progression == "glyph-growing":
+        ordered = glyph_staircase_order(ordered, rng)
     elif progression == "mixed":
         rng.shuffle(ordered)
     else:
-        raise ValueError("progression must be growing or mixed")
+        raise ValueError(
+            "progression must be growing, glyph-growing, or mixed"
+        )
 
     if signal_mode in {"visual", "ir"}:
         condition = "visual_silent" if signal_mode == "visual" else "ir_audio"
@@ -2257,7 +2264,7 @@ def make_schedule(stimuli: list[dict], settings: dict, rng: random.Random) -> li
 
     second_order = (
         list(ordered)
-        if progression == "growing"
+        if progression in {"growing", "glyph-growing"}
         else _second_pass_order(ordered, rng)
     )
     second_trials = []
@@ -2290,6 +2297,34 @@ def make_schedule(stimuli: list[dict], settings: dict, rng: random.Random) -> li
         first_index, second_index = pair_positions[trial["pair_id"]]
         trial["pair_lag"] = second_index - first_index - 1
     return schedule
+
+
+def glyph_staircase_order(
+    stimuli: list[dict], rng: random.Random,
+) -> list[dict]:
+    """Grow only glyph load while shuffling all stimulus natures per tier.
+
+    Conditions are already assigned before scheduling. Uniformly shuffling the
+    complete stimulus records inside each glyph-count tier therefore shuffles
+    identity/aligned/complementary condition nature without altering any exact
+    condition-by-glyph margin established by the planner.
+    """
+    tiers = {glyph_count: [] for glyph_count in (1, 2, 3)}
+    for stimulus in stimuli:
+        source_ids = stimulus.get("source_ids")
+        if not isinstance(source_ids, list) or len(source_ids) not in tiers:
+            raise ValueError(
+                "glyph-growing progression requires one to three source_ids "
+                "per stimulus"
+            )
+        tiers[len(source_ids)].append(stimulus)
+
+    ordered = []
+    for glyph_count in (1, 2, 3):
+        tier = tiers[glyph_count]
+        rng.shuffle(tier)
+        ordered.extend(tier)
+    return ordered
 
 
 def _second_pass_order(stimuli: list[dict], rng: random.Random) -> list[dict]:
@@ -2948,7 +2983,7 @@ def parse_args() -> argparse.Namespace:
         default="automatic",
     )
     parser.add_argument(
-        "--progression", choices=("growing", "mixed"), default="growing",
+        "--progression", choices=PROGRESSION_MODES, default="growing",
     )
     parser.add_argument(
         "--feedback", action=argparse.BooleanOptionalAction, default=True,

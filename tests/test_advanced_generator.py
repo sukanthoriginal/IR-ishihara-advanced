@@ -88,6 +88,12 @@ class AdvancedGeneratorTests(unittest.TestCase):
         self.assertEqual(normalized["glyphComposition"], "3")
         self.assertEqual(normalized["signalMode"], "ir")
         self.assertEqual(
+            generator.normalize_settings({"progression": "glyph-growing"})[
+                "progression"
+            ],
+            "glyph-growing",
+        )
+        self.assertEqual(
             generator.normalize_settings({"signalMode": "mixed"})["signalMode"],
             "mixed",
         )
@@ -791,6 +797,84 @@ class AdvancedGeneratorTests(unittest.TestCase):
             30,
         )
 
+    def test_glyph_staircase_grows_only_load_and_shuffles_condition_nature(self):
+        condition_pattern = [
+            "visual_background_audio",
+            "visual_aligned_overlay",
+            "visual_aligned_ir_audio",
+            "ir_audio",
+            "ir_audio",
+        ]
+        stimuli = []
+        assigned_by_id = {}
+        glyph_by_id = {}
+        for glyph_count in (1, 2, 3):
+            for position, condition in enumerate(condition_pattern, start=1):
+                index = (glyph_count - 1) * len(condition_pattern) + position
+                stimulus = self._schedule_stimulus(index, 100 - index)
+                stimulus.update({
+                    "source_ids": [f"source-{index}"] * glyph_count,
+                    "assigned_condition": condition,
+                    "canonical_visual_plate_png": f"canonical-{index}.png",
+                    "balanced_carrier_ir_plate_png": f"carrier-{index}.png",
+                    "visual_aligned_plate_png": f"aligned-{index}.png",
+                    "aligned_target_wav": f"aligned-{index}.wav",
+                })
+                stimuli.append(stimulus)
+                assigned_by_id[stimulus["stimulus_id"]] = condition
+                glyph_by_id[stimulus["stimulus_id"]] = glyph_count
+
+        settings = {
+            "signalMode": "mixed-aligned",
+            "progression": "glyph-growing",
+        }
+        first = generator.make_schedule(stimuli, settings, random.Random(902))
+        repeated = generator.make_schedule(stimuli, settings, random.Random(902))
+        second = generator.make_schedule(stimuli, settings, random.Random(903))
+
+        first_ids = [trial["stimulus_id"] for trial in first]
+        self.assertEqual(
+            first_ids,
+            [trial["stimulus_id"] for trial in repeated],
+        )
+        self.assertNotEqual(
+            first_ids,
+            [trial["stimulus_id"] for trial in second],
+        )
+        self.assertNotEqual(
+            [trial["condition"] for trial in first],
+            [trial["condition"] for trial in second],
+        )
+        self.assertEqual(set(first_ids), set(glyph_by_id))
+        self.assertEqual(
+            [glyph_by_id[stimulus_id] for stimulus_id in first_ids],
+            [1] * 5 + [2] * 5 + [3] * 5,
+        )
+        self.assertNotEqual(
+            [trial["estimated_difficulty_score"] for trial in first],
+            sorted(trial["estimated_difficulty_score"] for trial in first),
+        )
+        for glyph_count in (1, 2, 3):
+            tier_conditions = [
+                trial["condition"]
+                for trial in first
+                if glyph_by_id[trial["stimulus_id"]] == glyph_count
+            ]
+            self.assertEqual(
+                {condition: tier_conditions.count(condition)
+                 for condition in generator.ALIGNED_MIXED_CONDITIONS},
+                {
+                    "visual_background_audio": 1,
+                    "visual_aligned_overlay": 1,
+                    "visual_aligned_ir_audio": 1,
+                    "ir_audio": 2,
+                },
+            )
+        self.assertTrue(all(
+            trial["condition"] == assigned_by_id[trial["stimulus_id"]]
+            for trial in first
+        ))
+
     def test_paired_schedule_counterbalances_separates_and_reshuffles_choices(self):
         stimuli = [self._schedule_stimulus(index, score) for index, score in enumerate(
             (72, 18, 55, 36, 91), start=1,
@@ -985,9 +1069,19 @@ class AdvancedGeneratorTests(unittest.TestCase):
                     "signalMode": "mixed-aligned",
                     "baseStimulusCount": 10,
                     "mixedConditionRatio": "1:1:1:2",
+                    "progression": "glyph-growing",
                 },
                 root,
             )
+            glyph_count_by_stimulus = {
+                stimulus["stimulus_id"]: len(stimulus["source_ids"])
+                for stimulus in aligned_manifest["stimuli"]
+            }
+            aligned_glyph_order = [
+                glyph_count_by_stimulus[trial["stimulus_id"]]
+                for trial in aligned_manifest["trials"]
+            ]
+            self.assertEqual(aligned_glyph_order, sorted(aligned_glyph_order))
             self.assertEqual(aligned_manifest["condition_distribution"], {
                 "visual_background_audio": 2,
                 "visual_aligned_overlay": 2,

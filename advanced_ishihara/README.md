@@ -124,6 +124,10 @@ session engine:
   its complementary condition only from sequences containing a canonical
   change, and fixes exact condition×glyph margins without changing the standard
   Mixed mode;
+- supports a glyph-staircase schedule that advances only from one to three
+  glyphs while reproducibly shuffling identity, aligned, and complementary
+  condition nature inside each glyph tier without changing any exact
+  condition×glyph margin;
 - derives the single-colour visual target, two-colour shifted copy, and shifted
   IR copy from one canonical target mask, records matching mask digests, and
   verifies that either visible colour layer still carries the complete identity;
