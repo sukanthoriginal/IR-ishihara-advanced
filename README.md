@@ -190,7 +190,7 @@ are `test_data/` and `advanced_sessions/`. These local participant and generated
 files are ignored by Git and are never committed.
 
 The packaged launcher also mirrors every completed CSV, with the same filename
-and bytes, into `/Users/sukanth/Dev/Lossfunk/ir-results/ishihara-advanced/`.
+and bytes, into `/Users/sukanth/Dev/Lossfunk/ir-results/ishihara-alignment-lab/`.
 The original selected results directory remains the primary copy.
 
 ## Source-wise train/test split

@@ -294,7 +294,7 @@ class AdvancedWebStaticTests(unittest.TestCase):
         self.assertIn('ADVANCED_ISHIHARA_APP_NAME', packager)
         self.assertIn('ADVANCED_ISHIHARA_PORT', packager)
         self.assertIn('runtime_source_digest', packager)
-        self.assertIn('Dev/Lossfunk/ir-results/ishihara-advanced', packager)
+        self.assertIn('Dev/Lossfunk/ir-results/ishihara-alignment-lab', packager)
         self.assertIn('PYTHONDONTWRITEBYTECODE=1', launcher)
         self.assertNotIn(str(ROOT), launcher)
         self.assertIn('advanced_ishihara/grammar_snapshot.json', launcher)
