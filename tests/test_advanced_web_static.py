@@ -122,6 +122,11 @@ class AdvancedWebStaticTests(unittest.TestCase):
         self.assertIn('<option value="3">Only 3 glyphs</option>', self.html)
         self.assertIn("Reproducible run code", self.html)
         self.assertIn('id="mixed-condition-ratio"', self.html)
+        self.assertIn(
+            "Identity and complementary bases share red / red+green / RGB glyph colours; "
+            "aligned visual copies are yellow.",
+            self.html,
+        )
         self.assertIn('value="1:1:1:2"', self.html)
         self.assertIn("parseMixedConditionRatio", self.javascript)
         for preview_id in (
@@ -250,6 +255,10 @@ class AdvancedWebStaticTests(unittest.TestCase):
             "canonical_target_mask_sha256", "aligned_target_mask_sha256",
             "aligned_visual_base_mask_sha256",
             "aligned_visual_shifted_mask_sha256",
+            "aligned_visual_palette_version",
+            "visible_base_colours_json",
+            "aligned_visual_base_colours_json",
+            "aligned_visual_copy_colour_json",
             "aligned_visual_carrier_version",
             "aligned_visual_density_equivalence_version",
             "aligned_visual_pair_axis",

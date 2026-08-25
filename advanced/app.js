@@ -1688,6 +1688,16 @@ async function recordChoice(choice, responsePosition, responseInputMethod) {
     aligned_visual_shifted_dot_count: stimulus.aligned_visual_shifted_dot_count,
     aligned_visual_overlap_dot_count: stimulus.aligned_visual_overlap_dot_count,
     alignment_equivalence_version: stimulus.alignment_equivalence_version,
+    aligned_visual_palette_version: stimulus.aligned_visual_palette_version,
+    visible_base_colours_json: JSON.stringify(
+      stimulus.visible_base_colours ?? null,
+    ),
+    aligned_visual_base_colours_json: JSON.stringify(
+      stimulus.aligned_visual_base_colours ?? null,
+    ),
+    aligned_visual_copy_colour_json: JSON.stringify(
+      stimulus.aligned_visual_copy_colour ?? null,
+    ),
     aligned_visual_carrier_version: stimulus.aligned_visual_carrier_version,
     aligned_visual_density_equivalence_version: (
       stimulus.aligned_visual_density_equivalence_version
@@ -2192,6 +2202,8 @@ const CSV_COLUMNS = [
   'canonical_target_pixel_count', 'canonical_visual_dot_count',
   'aligned_visual_base_dot_count', 'aligned_visual_shifted_dot_count',
   'aligned_visual_overlap_dot_count', 'alignment_equivalence_version',
+  'aligned_visual_palette_version', 'visible_base_colours_json',
+  'aligned_visual_base_colours_json', 'aligned_visual_copy_colour_json',
   'aligned_visual_carrier_version', 'aligned_visual_density_equivalence_version',
   'aligned_visual_pair_axis', 'aligned_visual_dot_pitch_pixels',
   'aligned_visual_pair_offset_pixels',
@@ -2233,4 +2245,4 @@ const CSV_COLUMNS = [
   'fullscreen_at_onset', 'device_pixel_ratio', 'timestamp',
 ];
 
-document.documentElement.dataset.advancedIshiharaVersion = 'advanced-9';
+document.documentElement.dataset.advancedIshiharaVersion = 'advanced-10';

@@ -33,9 +33,10 @@ stimuli.
 The advanced **Four-way mixed** design is grammar-stratified and leaves the
 standard Mixed design unchanged. Its default `1:1:1:2` allocation is:
 
-- one complete single-colour identity target plus neutral carrier;
-- that identity geometry plus a one-dot-shifted complete copy in a second
-  visible colour, with neutral carrier;
+- one complete identity target using the complementary renderer's positional
+  base palette (red; red+green; or red+green+blue) plus neutral carrier;
+- that identity geometry plus one-dot-shifted complete yellow copies of every
+  glyph, with neutral carrier;
 - that identity geometry plus the identical shifted binary mask delivered in
 IR audio; and
 - a changed source scaffold plus its existing complementary IR diagnostic.
@@ -47,14 +48,17 @@ binary masks. Overlap is represented by separate full subdots rather than by
 letting one layer erase the other or by dividing a dot into coloured halves.
 Every carrier location is rendered as two smaller, complete subdots on a
 seeded random diagonal. Channel B is a bijective one-cell copy of channel A,
-so the red and cyan layers have exactly the same token count, radius histogram,
-nominal area, and active raster-pixel count. Neutral carrier replaces a signal
-colour without changing this dyad texture. Thus red-only and cyan-only
-isolation each preserves the full identity without any half-dot or density
-cue, and all four conditions share the same carrier. The ratio is configurable under
-Advanced block settings. Fine aligned plates use a 12-pixel dot pitch, equal to
-three pixels in the 178×64 audio mask; translations are seeded left or right
-and rejected if they crop any target geometry.
+so the positional RGB base layer and yellow copy layer have exactly the same
+token count, radius histogram, nominal area, and active raster-pixel count.
+Neutral carrier replaces a signal colour without changing this dyad texture.
+Isolating either complete layer therefore preserves the full identity without
+any half-dot or density cue. The complementary condition keeps its existing
+positional RGB scaffold unchanged, so visible base colour depends only on glyph
+count rather than aligned/complementary mapping class. All four conditions
+share the same carrier. The ratio is configurable under Advanced block
+settings. Fine aligned plates use a 12-pixel dot pitch, equal to three pixels
+in the 178×64 audio mask; translations are seeded left or right and rejected
+if they crop any target geometry.
 
 Each background carrier is normalized to a low fixed RMS, and that exact
 linear gain is also applied to its IR-probe counterfactual. The diagnostic's

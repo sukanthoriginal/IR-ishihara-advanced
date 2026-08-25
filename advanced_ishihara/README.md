@@ -128,9 +128,10 @@ session engine:
   glyphs while reproducibly shuffling identity, aligned, and complementary
   condition nature inside each glyph tier without changing any exact
   condition×glyph margin;
-- derives the single-colour visual target, two-colour shifted copy, and shifted
-  IR copy from one canonical target mask, records matching mask digests, and
-  verifies that either visible colour layer still carries the complete identity;
+- derives a positional red/red+green/RGB identity base, complete shifted yellow
+  copies, and shifted IR copies from the same canonical per-glyph masks; records
+  matching aggregate mask digests; and verifies that either layer still carries
+  the complete identity while the complementary renderer remains unchanged;
 - renders all four conditions on one balanced diagonal-dyad carrier; channel B
   is a bijective one-cell copy of channel A, giving exact equality of channel
   token count, radius histogram, nominal area, and active raster-pixel count

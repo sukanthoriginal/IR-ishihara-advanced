@@ -96,9 +96,10 @@ ALIGNED_VISUAL_COLOURS = (
 )
 BACKGROUND_COLOUR = (54, 56, 58)
 CANONICAL_TARGET_COLOUR = (220, 62, 68)
-ALIGNED_TARGET_COLOUR = (70, 205, 220)
+ALIGNED_VISUAL_COPY_COLOUR = VISIBLE_PROBE_COLOUR
 ALIGNED_VISUAL_CARRIER_VERSION = "fine-bijective-diagonal-dyads-v3"
 ALIGNED_VISUAL_DENSITY_EQUIVALENCE_VERSION = "exact-fine-grid-token-area-v2"
+ALIGNED_VISUAL_PALETTE_VERSION = "source-position-rgb-yellow-copy-v1"
 ALIGNED_VISUAL_PAIR_AXIS = "seeded-diagonal"
 ALIGNED_VISUAL_PAIR_OFFSET_PIXELS = 2
 ALIGNED_VISUAL_SUBDOT_RADII = (2, 3)
@@ -322,17 +323,18 @@ def render_trial_images(
         aligned_target_mask = translate_mask_without_clipping(
             target_mask, aligned_dx, aligned_dy,
         )
+        target_position_masks = draw_position_masks(target_ids)
         canonical_visual_plate, canonical_stats = _draw_balanced_dyad_plate(
             aligned_dots,
-            [target_mask],
-            (CANONICAL_TARGET_COLOUR,),
+            target_position_masks,
+            SOURCE_COLOURS,
             np.random.default_rng(plate_colour_seed),
             shift_audio_dx=aligned_dx,
         )
         aligned_visual_plate, aligned_stats = _draw_balanced_dyad_plate(
             aligned_dots,
-            [target_mask],
-            (CANONICAL_TARGET_COLOUR,),
+            target_position_masks,
+            SOURCE_COLOURS,
             np.random.default_rng(plate_colour_seed),
             shift_audio_dx=aligned_dx,
             copy_channel_a_to_b=True,
@@ -430,6 +432,10 @@ def render_trial_images(
             "balanced_visual_source_active_pixel_count": balanced_source_stats[
                 "channel_a_active_pixel_count"
             ],
+            "aligned_visual_palette_version": ALIGNED_VISUAL_PALETTE_VERSION,
+            "visible_base_colours": [
+                list(colour) for colour in SOURCE_COLOURS[:len(source_ids)]
+            ],
         }
     if include_aligned_assets:
         canonical_plate_path = plate_dir / f"{stem}_visual_canonical.png"
@@ -497,6 +503,10 @@ def render_trial_images(
             "alignment_equivalence_version": "canonical-target-mask-v1",
             "aligned_visual_base_channel_position": "seeded-diagonal-a",
             "aligned_visual_shifted_channel_position": "seeded-diagonal-b",
+            "aligned_visual_base_colours": [
+                list(colour) for colour in SOURCE_COLOURS[:len(target_ids)]
+            ],
+            "aligned_visual_copy_colour": list(ALIGNED_VISUAL_COPY_COLOUR),
         }
 
     choices = []
@@ -755,7 +765,7 @@ def _draw_balanced_dyad_plate(
             _vary_colour(colour, colour_rng)
             for colour in channel_a_colours[:len(channel_a_masks)]
         ]
-        b_colour = _vary_colour(ALIGNED_TARGET_COLOUR, colour_rng)
+        b_colour = _vary_colour(ALIGNED_VISUAL_COPY_COLOUR, colour_rng)
         draw.ellipse(
             a_box,
             fill=(

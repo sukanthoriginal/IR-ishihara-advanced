@@ -19,8 +19,10 @@ from shared.plate import (
     ALIGNED_VISUAL_CARRIER_DOT_COUNT,
     ALIGNED_VISUAL_CARRIER_OCCUPIED_PIXEL_COUNT,
     ALIGNED_VISUAL_CARRIER_RADIUS_HISTOGRAM,
+    ALIGNED_VISUAL_COPY_COLOUR,
     ALIGNED_VISUAL_DENSITY_EQUIVALENCE_VERSION,
     ALIGNED_VISUAL_DOT_STEP,
+    ALIGNED_VISUAL_PALETTE_VERSION,
     ALIGNED_VISUAL_PAIR_AXIS,
     ALIGNED_VISUAL_PAIR_OFFSET_PIXELS,
     ALIGNED_VISUAL_SUBDOT_RADII,
@@ -29,6 +31,7 @@ from shared.plate import (
     GEOMETRY_SEGMENTS,
     PLATE_HEIGHT,
     PLATE_WIDTH,
+    SOURCE_COLOURS,
     render_trial_images,
     segment_closure_relations,
 )
@@ -457,15 +460,20 @@ class AdvancedGeneratorTests(unittest.TestCase):
                 aligned_plate[:, :, 0].astype(np.int16)
                 - aligned_plate[:, :, 1].astype(np.int16) > 70
             )
-            cyan_pixels = (
-                aligned_plate[:, :, 1].astype(np.int16)
-                - aligned_plate[:, :, 0].astype(np.int16) > 70
+            yellow_pixels = (
+                aligned_plate[:, :, 0].astype(np.int16)
+                - aligned_plate[:, :, 2].astype(np.int16) > 100
             ) & (
-                aligned_plate[:, :, 2].astype(np.int16)
-                - aligned_plate[:, :, 0].astype(np.int16) > 70
+                aligned_plate[:, :, 1].astype(np.int16)
+                - aligned_plate[:, :, 2].astype(np.int16) > 80
+            ) & (
+                np.abs(
+                    aligned_plate[:, :, 0].astype(np.int16)
+                    - aligned_plate[:, :, 1].astype(np.int16)
+                ) < 80
             )
             self.assertGreater(np.count_nonzero(red_pixels), 0)
-            self.assertGreater(np.count_nonzero(cyan_pixels), 0)
+            self.assertGreater(np.count_nonzero(yellow_pixels), 0)
             self.assertEqual(aligned_input.shape, (AUDIO_HEIGHT, AUDIO_WIDTH))
             self.assertEqual(
                 np.count_nonzero(aligned_input != background),
@@ -523,6 +531,21 @@ class AdvancedGeneratorTests(unittest.TestCase):
                 ALIGNED_VISUAL_DENSITY_EQUIVALENCE_VERSION,
             )
             self.assertEqual(
+                assets["aligned_visual_palette_version"],
+                ALIGNED_VISUAL_PALETTE_VERSION,
+            )
+            self.assertEqual(
+                assets["visible_base_colours"], [list(SOURCE_COLOURS[0])],
+            )
+            self.assertEqual(
+                assets["aligned_visual_base_colours"],
+                [list(SOURCE_COLOURS[0])],
+            )
+            self.assertEqual(
+                assets["aligned_visual_copy_colour"],
+                list(ALIGNED_VISUAL_COPY_COLOUR),
+            )
+            self.assertEqual(
                 assets["aligned_visual_subdot_count"],
                 assets["aligned_visual_carrier_dot_count"] * 2,
             )
@@ -553,6 +576,69 @@ class AdvancedGeneratorTests(unittest.TestCase):
             self.assertEqual(
                 assets["canonical_carrier_occupancy_sha256"],
                 assets["aligned_carrier_occupancy_sha256"],
+            )
+
+    def test_three_glyph_aligned_palette_is_rgb_base_with_yellow_copies(self):
+        source_ids = ["c", "e", "u"]
+        choices = [
+            source_ids,
+            ["zero-o", "e", "u"],
+            ["c", "f", "u"],
+            ["c", "e", "q"],
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            assets = render_trial_images(
+                source_ids, source_ids, choices, root, "rgb-aligned", seed=24,
+                include_aligned_assets=True,
+            )
+            canonical = np.asarray(Image.open(
+                root / assets["canonical_visual_plate_png"],
+            )).astype(np.int16)
+            aligned = np.asarray(Image.open(
+                root / assets["visual_aligned_plate_png"],
+            )).astype(np.int16)
+
+            def colour_masks(image):
+                red = (image[:, :, 0] - image[:, :, 1] > 70) & (
+                    image[:, :, 0] - image[:, :, 2] > 70
+                )
+                green = (image[:, :, 1] - image[:, :, 0] > 70) & (
+                    image[:, :, 1] - image[:, :, 2] > 45
+                )
+                blue = (image[:, :, 2] - image[:, :, 0] > 90) & (
+                    image[:, :, 2] - image[:, :, 1] > 60
+                )
+                yellow = (image[:, :, 0] - image[:, :, 2] > 100) & (
+                    image[:, :, 1] - image[:, :, 2] > 80
+                ) & (np.abs(image[:, :, 0] - image[:, :, 1]) < 80)
+                return red, green, blue, yellow
+
+            canonical_masks = colour_masks(canonical)
+            aligned_masks = colour_masks(aligned)
+            for mask in canonical_masks[:3]:
+                self.assertGreater(np.count_nonzero(mask), 0)
+            self.assertEqual(np.count_nonzero(canonical_masks[3]), 0)
+            for mask in aligned_masks:
+                self.assertGreater(np.count_nonzero(mask), 0)
+            zones = (
+                slice(round(PLATE_WIDTH * 0.10), round(PLATE_WIDTH * 0.38)),
+                slice(round(PLATE_WIDTH * 0.36), round(PLATE_WIDTH * 0.64)),
+                slice(round(PLATE_WIDTH * 0.62), round(PLATE_WIDTH * 0.90)),
+            )
+            for position, zone in enumerate(zones):
+                self.assertGreater(
+                    np.count_nonzero(aligned_masks[position][:, zone]), 0,
+                )
+                self.assertGreater(
+                    np.count_nonzero(aligned_masks[3][:, zone]), 0,
+                )
+            expected_base = [list(colour) for colour in SOURCE_COLOURS]
+            self.assertEqual(assets["visible_base_colours"], expected_base)
+            self.assertEqual(assets["aligned_visual_base_colours"], expected_base)
+            self.assertEqual(
+                assets["aligned_visual_copy_colour"],
+                list(ALIGNED_VISUAL_COPY_COLOUR),
             )
 
     def test_aligned_visual_uses_bijective_complete_subdots_with_exact_density(self):
@@ -1114,6 +1200,17 @@ class AdvancedGeneratorTests(unittest.TestCase):
             )
             for stimulus in aligned_manifest["stimuli"]:
                 condition = stimulus["assigned_condition"]
+                expected_base_colours = [
+                    list(colour)
+                    for colour in SOURCE_COLOURS[:len(stimulus["source_ids"])]
+                ]
+                self.assertEqual(
+                    stimulus["aligned_visual_palette_version"],
+                    ALIGNED_VISUAL_PALETTE_VERSION,
+                )
+                self.assertEqual(
+                    stimulus["visible_base_colours"], expected_base_colours,
+                )
                 if condition in generator.ALIGNED_IDENTITY_CONDITIONS:
                     self.assertEqual(stimulus["mapping_class"], "identity")
                     self.assertEqual(stimulus["source_ids"], stimulus["target_ids"])
@@ -1144,6 +1241,14 @@ class AdvancedGeneratorTests(unittest.TestCase):
                     self.assertEqual(
                         stimulus["aligned_visual_carrier_version"],
                         ALIGNED_VISUAL_CARRIER_VERSION,
+                    )
+                    self.assertEqual(
+                        stimulus["aligned_visual_base_colours"],
+                        expected_base_colours,
+                    )
+                    self.assertEqual(
+                        stimulus["aligned_visual_copy_colour"],
+                        list(ALIGNED_VISUAL_COPY_COLOUR),
                     )
                     self.assertEqual(
                         stimulus["aligned_visual_subdot_count"],
@@ -1201,6 +1306,12 @@ class AdvancedGeneratorTests(unittest.TestCase):
             identity_stimulus[
                 "aligned_visual_carrier_occupied_pixel_count"
             ] = original_pixels
+            original_palette = identity_stimulus["aligned_visual_palette_version"]
+            identity_stimulus["aligned_visual_palette_version"] = "cyan-copy-v0"
+            self.assertFalse(generator.manifest_is_complete(
+                aligned_manifest, aligned_path.parent,
+            ))
+            identity_stimulus["aligned_visual_palette_version"] = original_palette
             complementary = next(
                 item for item in aligned_manifest["stimuli"]
                 if item["assigned_condition"] == "ir_audio"

@@ -30,6 +30,8 @@ from shared.plate import (
     ALIGNED_VISUAL_CARRIER_RADIUS_HISTOGRAM,
     ALIGNED_VISUAL_DENSITY_EQUIVALENCE_VERSION,
     ALIGNED_VISUAL_DOT_STEP,
+    ALIGNED_VISUAL_COPY_COLOUR,
+    ALIGNED_VISUAL_PALETTE_VERSION,
     ALIGNED_VISUAL_PAIR_AXIS,
     ALIGNED_VISUAL_PAIR_OFFSET_PIXELS,
     ALIGNED_VISUAL_SUBDOT_RADII,
@@ -38,6 +40,7 @@ from shared.plate import (
     GEOMETRY_SEGMENTS,
     PLATE_HEIGHT,
     PLATE_WIDTH,
+    SOURCE_COLOURS,
     draw_geometry_mask,
     mask_digest,
     render_trial_images,
@@ -59,8 +62,8 @@ from shared.soundscape import (
     wav_rms_int16,
 )
 
-SCHEMA_VERSION = 7
-RENDER_VERSION = 6
+SCHEMA_VERSION = 8
+RENDER_VERSION = 7
 AUDIO_RENDER_VERSION = 2
 DIFFICULTY_MODEL_VERSION = "estimated-v1"
 DIFFICULTY_COMPONENT_NAMES = (
@@ -2530,6 +2533,18 @@ def manifest_is_complete(manifest: dict, root: Path) -> bool:
             return False
         if signal_mode == "mixed-aligned":
             condition = stimulus.get("assigned_condition")
+            source_ids = stimulus.get("source_ids", [])
+            expected_base_colours = [
+                list(colour) for colour in SOURCE_COLOURS[:len(source_ids)]
+            ]
+            if (
+                not 1 <= len(source_ids) <= len(SOURCE_COLOURS)
+                or stimulus.get("aligned_visual_palette_version")
+                != ALIGNED_VISUAL_PALETTE_VERSION
+                or stimulus.get("visible_base_colours")
+                != expected_base_colours
+            ):
+                return False
             identity_condition = condition in ALIGNED_IDENTITY_CONDITIONS
             if identity_condition:
                 if (
@@ -2633,6 +2648,10 @@ def manifest_is_complete(manifest: dict, root: Path) -> bool:
                 != "seeded-diagonal-a"
                 or stimulus.get("aligned_visual_shifted_channel_position")
                 != "seeded-diagonal-b"
+                or stimulus.get("aligned_visual_base_colours")
+                != expected_base_colours
+                or stimulus.get("aligned_visual_copy_colour")
+                != list(ALIGNED_VISUAL_COPY_COLOUR)
                 or stimulus.get("canonical_visual_dot_count")
                 != stimulus.get("aligned_visual_base_dot_count")
                 or stimulus.get("canonical_visual_dot_count")
