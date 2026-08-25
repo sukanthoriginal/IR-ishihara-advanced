@@ -67,6 +67,10 @@ class AdvancedWebStaticTests(unittest.TestCase):
             '<option value="paired">Repeated pair — same puzzle twice (research)</option>',
             self.html,
         )
+        self.assertIn(
+            '<option value="mixed-aligned">Four-way mixed — visual and IR alignment</option>',
+            self.html,
+        )
         self.assertLess(
             self.html.index('<option value="mixed" selected>'),
             self.html.index('<option value="visual">'),
@@ -101,6 +105,11 @@ class AdvancedWebStaticTests(unittest.TestCase):
         self.assertIn("visual + neutral carrier", self.javascript)
         self.assertIn("manifest.sweep_repetitions", self.javascript)
         self.assertIn("manifest.inter_sweep_interval_ms", self.javascript)
+        self.assertIn("'visual_aligned_overlay'", self.javascript)
+        self.assertIn("'visual_aligned_ir_audio'", self.javascript)
+        self.assertIn("Complete identity visual + shifted visual", self.javascript)
+        self.assertIn("Complete identity visual + shifted identical IR", self.javascript)
+        self.assertIn("changed mappings to complementary IR", self.html)
 
     def test_preview_advanced_controls_and_manual_feedback_are_wired(self):
         self.assertIn("Automatic — balance 1, 2, and 3 glyphs", self.html)
@@ -108,6 +117,9 @@ class AdvancedWebStaticTests(unittest.TestCase):
         self.assertIn('<option value="2">Only 2 glyphs</option>', self.html)
         self.assertIn('<option value="3">Only 3 glyphs</option>', self.html)
         self.assertIn("Reproducible run code", self.html)
+        self.assertIn('id="mixed-condition-ratio"', self.html)
+        self.assertIn('value="1:1:1:2"', self.html)
+        self.assertIn("parseMixedConditionRatio", self.javascript)
         for preview_id in (
             "preview-stimuli", "preview-presentations", "preview-glyphs",
             "preview-conditions", "preview-duration", "preview-source",
@@ -228,6 +240,37 @@ class AdvancedWebStaticTests(unittest.TestCase):
             "condition_count_visual_background_audio", "condition_assignment_method",
             "difficulty_match_id", "difficulty_match_position",
             "difficulty_match_score_gap", "assigned_condition",
+            "mapping_class", "choice_rule", "combinatorial_verification_passed",
+            "combinatorial_eligible_by_glyph_json",
+            "condition_by_glyph_count_json",
+            "canonical_target_mask_sha256", "aligned_target_mask_sha256",
+            "aligned_visual_base_mask_sha256",
+            "aligned_visual_shifted_mask_sha256",
+            "aligned_visual_carrier_version",
+            "aligned_visual_density_equivalence_version",
+            "aligned_visual_pair_axis",
+            "aligned_visual_pair_offset_pixels",
+            "aligned_visual_subdot_radii_json",
+            "aligned_visual_carrier_dot_count",
+            "aligned_visual_subdot_count",
+            "aligned_visual_carrier_radius_histogram_json",
+            "aligned_visual_carrier_occupied_pixel_count",
+            "visible_signal_dot_count",
+            "balanced_visual_source_dot_count",
+            "balanced_visual_source_radius_histogram_json",
+            "balanced_visual_source_radius_area_units",
+            "balanced_visual_source_active_pixel_count",
+            "aligned_visual_base_channel_position",
+            "aligned_visual_shifted_channel_position",
+            "aligned_visual_base_radius_histogram_json",
+            "aligned_visual_shifted_radius_histogram_json",
+            "aligned_visual_base_radius_area_units",
+            "aligned_visual_shifted_radius_area_units",
+            "aligned_visual_base_active_pixel_count",
+            "aligned_visual_shifted_active_pixel_count",
+            "balanced_carrier_occupancy_sha256",
+            "canonical_carrier_occupancy_sha256",
+            "aligned_carrier_occupancy_sha256",
         ):
             self.assertIn(field, self.javascript)
 
@@ -240,11 +283,17 @@ class AdvancedWebStaticTests(unittest.TestCase):
         server = (ROOT / "shared" / "experiment_server.py").read_text()
         self.assertTrue(os.access(executable, os.X_OK))
         self.assertEqual(metadata["CFBundleExecutable"], executable.name)
-        self.assertIn('server_port="8137"', launcher)
+        self.assertIn('server_port="__SERVER_PORT__"', launcher)
+        self.assertIn('runtime_id="__RUNTIME_ID__"', launcher)
+        self.assertIn('/api/runtime-identity', launcher)
+        self.assertIn('ADVANCED_ISHIHARA_RUNTIME_ID', launcher)
         self.assertIn('/advanced/', launcher)
-        self.assertIn('Application Support/Advanced IR Ishihara', launcher)
+        self.assertIn('Application Support/__DATA_NAME__', launcher)
         self.assertIn('ADVANCED_ISHIHARA_MIRROR_DATA_DIR', launcher)
-        self.assertIn('Dev/Lossfunk/ir-results/ishihara-advanced', launcher)
+        self.assertIn('ADVANCED_ISHIHARA_APP_NAME', packager)
+        self.assertIn('ADVANCED_ISHIHARA_PORT', packager)
+        self.assertIn('runtime_source_digest', packager)
+        self.assertIn('Dev/Lossfunk/ir-results/ishihara-advanced', packager)
         self.assertIn('PYTHONDONTWRITEBYTECODE=1', launcher)
         self.assertNotIn(str(ROOT), launcher)
         self.assertIn('advanced_ishihara/grammar_snapshot.json', launcher)
@@ -252,6 +301,7 @@ class AdvancedWebStaticTests(unittest.TestCase):
         self.assertIn('codesign --verify', packager)
         self.assertNotIn('ishihara_stimuli', packager)
         self.assertIn('/api/prepare-session', server)
+        self.assertIn('/api/runtime-identity', server)
         self.assertIn('/api/save-run', server)
         self.assertIn('prefix = "/advanced_sessions/"', server)
         self.assertIn('candidate.relative_to(session_root)', server)

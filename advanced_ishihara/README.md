@@ -119,6 +119,18 @@ session engine:
 - generates and validates only the frozen session's assets;
 - supports silent visual, standalone IR-audio, distinct-stimulus mixed, and
   repeated-stimulus paired comparison blocks;
+- supports an isolated four-way aligned mixed block whose default `1:1:1:2`
+  allocation draws its first three conditions only from split-local identities,
+  its complementary condition only from sequences containing a canonical
+  change, and fixes exact condition×glyph margins without changing the standard
+  Mixed mode;
+- derives the single-colour visual target, two-colour shifted copy, and shifted
+  IR copy from one canonical target mask, records matching mask digests, and
+  verifies that either visible colour layer still carries the complete identity;
+- renders all four conditions on one balanced diagonal-dyad carrier; channel B
+  is a bijective one-cell copy of channel A, giving exact equality of channel
+  token count, radius histogram, nominal area, and active raster-pixel count
+  without introducing half-dot or density cues;
 - assigns mixed stimuli to carrier-controlled visual-background and IR-audio
   conditions without repeating a puzzle, provisionally matching within glyph
   count and then by structural-difficulty features;
@@ -131,7 +143,14 @@ session engine:
 - counterbalances paired order while logging presentation order, pass, lag,
   and displayed choice order.
 
-The final confirmatory protocol should freeze the foil-ranking rule, establish
-difficulty strata from pilot data, and decide whether identity-only sequences
-are included as explicit catch trials. The raw grammar and stable IDs make those
-filters auditable without ever pre-generating all 950,894 possibilities.
+For Four-way mixed specifically, a split with `M` family mappings and `I`
+source identities has `M^k` eligible ordered `k`-glyph sequences, partitioned
+into `I^k` all-identity sequences and `M^k-I^k` sequences containing a change.
+Consequently its one-glyph counts reproduce the declared tables exactly:
+training `60 = 13 + 47`, held-out testing `30 = 6 + 24`. The manifest records
+and verifies this partition for all three glyph lengths.
+
+The final confirmatory protocol should freeze the foil-ranking rule and
+establish difficulty strata from pilot data. The raw grammar and stable IDs
+make those filters auditable without ever pre-generating all 950,894
+possibilities.

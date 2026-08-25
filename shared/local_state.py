@@ -21,6 +21,7 @@ from advanced_ishihara.generate_session import (
     derive_seed,
     eligible_transformation_counts,
     load_grammar,
+    mixed_aligned_eligible_counts,
     normalize_settings,
     plan_session,
 )
@@ -888,7 +889,11 @@ def audit_participant_candidate(
         exact_signatures.append(exact)
 
     grammar = grammar or load_grammar(repo_root)
-    counts = eligible_transformation_counts(grammar, normalized["split"])
+    counts = (
+        mixed_aligned_eligible_counts(grammar, normalized["split"])
+        if normalized["signalMode"] == "mixed-aligned"
+        else eligible_transformation_counts(grammar, normalized["split"])
+    )
     enabled_lengths = (
         (1, 2, 3)
         if normalized["glyphComposition"] == "automatic"
@@ -1042,7 +1047,10 @@ def signature_is_eligible(
         if target not in {source, *family["changedTargetIds"]}:
             return False
         mappings.append((family, source, target))
-    if not any(source != target for _family, source, target in mappings):
+    has_change = any(source != target for _family, source, target in mappings)
+    if normalized_settings["signalMode"] == "mixed-aligned":
+        return True
+    if not has_change:
         return False
     if len(parts) == 1:
         family, source, target = mappings[0]

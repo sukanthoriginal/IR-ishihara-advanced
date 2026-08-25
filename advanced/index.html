@@ -107,10 +107,11 @@
               <option value="ir">IR only — audio diagnostic</option>
             </optgroup>
             <optgroup label="Advanced research mode">
+              <option value="mixed-aligned">Four-way mixed — visual and IR alignment</option>
               <option value="paired">Repeated pair — same puzzle twice (research)</option>
             </optgroup>
           </select>
-          <span class="field-note">Mixed assigns each puzzle once: visual diagnostic + neutral carrier audio, or source scaffold + IR diagnostic audio.</span>
+          <span class="field-note">Standard Mixed compares visual and IR diagnostics. Four-way mixed assigns complete identities to its three controls and changed mappings to complementary IR.</span>
         </label>
         <label>Stimuli
           <input id="base-stimulus-count" type="number" min="4" max="96" step="1" value="30">
@@ -160,6 +161,10 @@
           <label>Reproducible run code
             <span class="input-action"><input id="seed" type="number" min="0" max="4294967295" step="1" inputmode="numeric"><button id="new-seed-btn" class="small" type="button">New code</button></span>
             <span class="field-note">Reuse this code to request the same initial candidate. Participant-history checks may select a different effective code.</span>
+          </label>
+          <label id="mixed-condition-ratio-field" class="hidden">Four-way condition ratio
+            <input id="mixed-condition-ratio" value="1:1:1:2" inputmode="numeric" pattern="[0-9]+:[0-9]+:[0-9]+:[0-9]+">
+            <span class="field-note">Identity visual carrier : identity visual+visual : identity visual+IR : changed complementary visual+IR. Every condition uses the same exact-density diagonal-dyad carrier; aligned colours remain complete dots, never split halves. Positive integers only.</span>
           </label>
         </div>
       </details>
@@ -254,6 +259,6 @@
   </main>
 
   <div id="boot-error" class="page hidden status error"></div>
-  <script type="module" src="app.js?v=advanced-7"></script>
+  <script type="module" src="app.js?v=advanced-10"></script>
 </body>
 </html>

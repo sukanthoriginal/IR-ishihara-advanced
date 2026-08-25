@@ -6,14 +6,18 @@ runtime_dir="${contents_dir}/Resources/runtime"
 source "${runtime_dir}/shared/launcher_common.zsh"
 
 python_bin="__PYTHON_BIN__"
-server_port="8137"
+app_name="__APP_NAME__"
+server_port="__SERVER_PORT__"
+runtime_id="__RUNTIME_ID__"
 app_url="http://127.0.0.1:${server_port}/advanced/"
+identity_url="http://127.0.0.1:${server_port}/api/runtime-identity"
 expected_text="<title>Advanced IR Ishihara</title>"
+expected_identity="${runtime_id}"
 chrome_app="/Applications/Google Chrome.app"
-server_log="/tmp/advanced_ishihara_server.log"
-launcher_log="/tmp/advanced_ishihara_launcher.log"
-data_root="${HOME}/Library/Application Support/Advanced IR Ishihara"
-mirror_data_dir="${HOME}/Dev/Lossfunk/ir-results/ishihara-advanced"
+server_log="/tmp/__LOG_STEM___server.log"
+launcher_log="/tmp/__LOG_STEM___launcher.log"
+data_root="${HOME}/Library/Application Support/__DATA_NAME__"
+mirror_data_dir="__MIRROR_DATA_DIR__"
 
 exec >>"$launcher_log" 2>&1
 print "$(/bin/date -u '+%Y-%m-%dT%H:%M:%SZ') launcher invoked"
@@ -24,7 +28,7 @@ for required_path in \
   "$runtime_dir/advanced/index.html" \
   "$runtime_dir/advanced_ishihara/grammar_snapshot.json"; do
   if [[ ! -f "$required_path" ]]; then
-    show_launcher_error $'The Advanced IR Ishihara application is incomplete.\n\nMissing: '"${required_path}"
+    show_launcher_error $'The '"${app_name}"$' application is incomplete.\n\nMissing: '"${required_path}"
     exit 1
   fi
 done
@@ -35,6 +39,10 @@ if ! "$python_bin" -c 'import numpy; import PIL' >/dev/null 2>&1; then
 fi
 
 listener_pid="$(/usr/sbin/lsof -tiTCP:"$server_port" -sTCP:LISTEN 2>/dev/null || true)"
+if [[ -n "$listener_pid" ]] && ! wait_for_page "$identity_url" "$expected_identity" 1; then
+  show_launcher_error $'The '"${app_name}"$' port is already owned by a different simulator runtime.\n\nPort: '"${server_port}"$'\n\nClose the other simulator or rebuild this app with a different port.'
+  exit 1
+fi
 if [[ -z "$listener_pid" ]]; then
   /bin/mkdir -p "$data_root/test_data" "$data_root/session_cache" "$mirror_data_dir"
   cd "$runtime_dir" || exit 1
@@ -42,19 +50,24 @@ if [[ -z "$listener_pid" ]]; then
     export RASPIVOICE_BIN="$runtime_dir/bin/raspivoice"
   fi
   PYTHONDONTWRITEBYTECODE=1 \
+  ADVANCED_ISHIHARA_RUNTIME_ID="$runtime_id" \
   ADVANCED_ISHIHARA_TEST_DATA_DIR="$data_root/test_data" \
   ADVANCED_ISHIHARA_MIRROR_DATA_DIR="$mirror_data_dir" \
   ADVANCED_ISHIHARA_SESSION_DIR="$data_root/session_cache" \
   nohup "$python_bin" -B server.py "$server_port" >"$server_log" 2>&1 </dev/null &
 fi
 
+if ! wait_for_page "$identity_url" "$expected_identity" 40; then
+  show_launcher_error $'The '"${app_name}"$' server identity did not match this packaged build.\n\nSee '"${server_log}"$' for details.'
+  exit 1
+fi
 if ! wait_for_page "$app_url" "$expected_text" 40; then
-  show_launcher_error $'The Advanced IR Ishihara server did not become ready.\n\nSee '"${server_log}"$' for details.'
+  show_launcher_error $'The '"${app_name}"$' server did not become ready.\n\nSee '"${server_log}"$' for details.'
   exit 1
 fi
 
 if [[ "${1:-}" == "--check-only" ]]; then
-  print "Advanced IR Ishihara launcher check passed: ${app_url}"
+  print "${app_name} launcher check passed: ${app_url}"
   exit 0
 fi
 

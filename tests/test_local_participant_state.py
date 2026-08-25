@@ -9,7 +9,11 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
-from advanced_ishihara.generate_session import load_grammar, plan_session
+from advanced_ishihara.generate_session import (
+    RENDER_VERSION,
+    load_grammar,
+    plan_session,
+)
 from shared.experiment_server import LocalThreadingServer, make_handler
 from shared.local_state import (
     ActiveSessionLeaseError,
@@ -19,6 +23,7 @@ from shared.local_state import (
     SESSION_LEASE_INACTIVITY_SECONDS,
     audit_participant_candidate,
     plan_participant_session,
+    signature_is_eligible,
     signature_digest,
 )
 
@@ -27,6 +32,23 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class LocalParticipantStateTests(unittest.TestCase):
+    def test_four_way_history_filter_accepts_split_local_identities_and_all_changes(self):
+        grammar = load_grammar(ROOT)
+        standard = {
+            "split": "train", "signalMode": "visual",
+            "baseStimulusCount": 30, "glyphComposition": "automatic",
+            "progression": "growing", "feedbackEnabled": True, "seed": 1729,
+            "schemaVersion": 7,
+        }
+        aligned = {**standard, "signalMode": "mixed-aligned"}
+        self.assertFalse(signature_is_eligible("c--c", grammar, standard))
+        self.assertTrue(signature_is_eligible("c--c", grammar, aligned))
+        self.assertTrue(signature_is_eligible("t--i", grammar, aligned))
+        self.assertFalse(signature_is_eligible("gamma--gamma", grammar, aligned))
+        self.assertTrue(signature_is_eligible(
+            "gamma--gamma", grammar, {**aligned, "split": "test"},
+        ))
+
     def test_preferences_and_unique_exposure_history_persist_locally(self):
         with tempfile.TemporaryDirectory() as temp_name:
             temp_root = Path(temp_name)
@@ -768,6 +790,9 @@ class LocalParticipantHttpTests(unittest.TestCase):
             thread.start()
             base_url = f"http://127.0.0.1:{server.server_address[1]}"
             try:
+                runtime = self.get_json(base_url + "/api/runtime-identity")
+                self.assertEqual(runtime["render_version"], RENDER_VERSION)
+                self.assertTrue(runtime["runtime_id"].startswith("source:"))
                 initial = self.get_json(base_url + "/api/local-state")
                 self.assertEqual(initial["participantId"], "")
                 self.assertEqual(initial["participantUniqueSeen"], 0)

@@ -11,8 +11,15 @@ import numpy as np
 from PIL import Image
 
 from advanced_ishihara import generate_session as generator
+from shared import plate as plate_renderer
 from shared import soundscape
 from shared.plate import (
+    ALIGNED_DISPLACEMENT_AUDIO_PIXELS,
+    ALIGNED_VISUAL_CARRIER_VERSION,
+    ALIGNED_VISUAL_DENSITY_EQUIVALENCE_VERSION,
+    ALIGNED_VISUAL_PAIR_AXIS,
+    ALIGNED_VISUAL_PAIR_OFFSET_PIXELS,
+    ALIGNED_VISUAL_SUBDOT_RADII,
     AUDIO_HEIGHT,
     AUDIO_WIDTH,
     GEOMETRY_SEGMENTS,
@@ -85,6 +92,12 @@ class AdvancedGeneratorTests(unittest.TestCase):
         })
         self.assertEqual(legacy["signalMode"], "paired")
         self.assertEqual(legacy["baseStimulusCount"], 6)
+        aligned = generator.normalize_settings({
+            "signalMode": "mixed-aligned",
+            "mixedConditionRatio": "2:2:2:4",
+        })
+        self.assertEqual(aligned["mixedConditionRatio"], "1:1:1:2")
+        self.assertEqual(aligned["mixedConditionWeights"], [1, 1, 1, 2])
 
         invalid_settings = (
             {"signalMode": "sound"},
@@ -95,6 +108,8 @@ class AdvancedGeneratorTests(unittest.TestCase):
             {"feedbackEnabled": "false"},
             {"seed": -1},
             {"seed": 0x1_0000_0000},
+            {"signalMode": "mixed-aligned", "mixedConditionRatio": "1:1:2"},
+            {"signalMode": "mixed-aligned", "mixedConditionRatio": "1:0:1:2"},
         )
         for settings in invalid_settings:
             with self.subTest(settings=settings), self.assertRaises(ValueError):
@@ -133,6 +148,51 @@ class AdvancedGeneratorTests(unittest.TestCase):
                 expected,
             )
 
+    def test_aligned_condition_quotas_default_to_one_one_one_two(self):
+        self.assertEqual(
+            generator.weighted_condition_quotas(30, (1, 1, 1, 2), 1729),
+            (6, 6, 6, 12),
+        )
+        self.assertEqual(sum(
+            generator.weighted_condition_quotas(31, (1, 1, 1, 2), 9)
+        ), 31)
+        matrix = generator.condition_glyph_quota_matrix(
+            (6, 6, 6, 12), {1: 10, 2: 10, 3: 10}, 1729,
+        )
+        self.assertEqual(matrix, {
+            "visual_background_audio": {1: 2, 2: 2, 3: 2},
+            "visual_aligned_overlay": {1: 2, 2: 2, 3: 2},
+            "visual_aligned_ir_audio": {1: 2, 2: 2, 3: 2},
+            "ir_audio": {1: 4, 2: 4, 3: 4},
+        })
+        for condition, quota in zip(
+            generator.ALIGNED_MIXED_CONDITIONS, (6, 6, 6, 12),
+        ):
+            self.assertEqual(sum(matrix[condition].values()), quota)
+        for glyph in (1, 2, 3):
+            self.assertEqual(sum(row[glyph] for row in matrix.values()), 10)
+        for count in range(4, 97):
+            glyph_quotas = generator.glyph_count_quotas(
+                count, "automatic", count * 17,
+            )
+            for weights in ((1, 1, 1, 2), (2, 3, 5, 7), (1, 1, 1, 37)):
+                condition_quotas = generator.weighted_condition_quotas(
+                    count, weights, count * 17,
+                )
+                apportioned = generator.condition_glyph_quota_matrix(
+                    condition_quotas, glyph_quotas, count * 17,
+                )
+                self.assertEqual(
+                    [sum(apportioned[condition].values())
+                     for condition in generator.ALIGNED_MIXED_CONDITIONS],
+                    list(condition_quotas),
+                )
+                self.assertEqual(
+                    {glyph: sum(row[glyph] for row in apportioned.values())
+                     for glyph in (1, 2, 3)},
+                    glyph_quotas,
+                )
+
     def test_lightweight_plan_reports_exact_runnable_catalog_counts(self):
         self.assertEqual(
             generator.eligible_transformation_counts(self.grammar, "train"),
@@ -141,6 +201,14 @@ class AdvancedGeneratorTests(unittest.TestCase):
         self.assertEqual(
             generator.eligible_transformation_counts(self.grammar, "test"),
             {1: 19, 2: 864, 3: 26784},
+        )
+        self.assertEqual(
+            generator.mixed_aligned_eligible_counts(self.grammar, "train"),
+            {1: 60, 2: 3600, 3: 216000},
+        )
+        self.assertEqual(
+            generator.mixed_aligned_eligible_counts(self.grammar, "test"),
+            {1: 30, 2: 900, 3: 27000},
         )
         plan = generator.plan_session({
             "split": "test",
@@ -349,6 +417,158 @@ class AdvancedGeneratorTests(unittest.TestCase):
             self.assertTrue(np.all(probe[probe != background] >= 210))
             self.assertIn("c", family["changedTargetIds"])
 
+    def test_aligned_assets_shift_a_complete_target_by_one_dot_without_clipping(self):
+        choices = [["c"], ["zero-o"], ["e"], ["g"]]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            assets = render_trial_images(
+                ["c"], ["c"], choices, root, "aligned", seed=20,
+                include_aligned_assets=True,
+            )
+            self.assertEqual(
+                abs(assets["aligned_displacement_audio_dx"]),
+                ALIGNED_DISPLACEMENT_AUDIO_PIXELS,
+            )
+            self.assertEqual(assets["aligned_displacement_audio_dy"], 0)
+            self.assertEqual(
+                assets["aligned_displacement_plate_pixels"],
+                ALIGNED_DISPLACEMENT_AUDIO_PIXELS * 4,
+            )
+            aligned_plate = np.asarray(Image.open(
+                root / assets["visual_aligned_plate_png"],
+            ))
+            canonical_plate = np.asarray(Image.open(
+                root / assets["canonical_visual_plate_png"],
+            ))
+            aligned_input = np.asarray(Image.open(root / assets["aligned_input_png"]))
+            background = np.asarray(Image.open(root / assets["background_input_png"]))
+            self.assertFalse(np.array_equal(aligned_plate, canonical_plate))
+            red_pixels = (
+                aligned_plate[:, :, 0].astype(np.int16)
+                - aligned_plate[:, :, 1].astype(np.int16) > 70
+            )
+            cyan_pixels = (
+                aligned_plate[:, :, 1].astype(np.int16)
+                - aligned_plate[:, :, 0].astype(np.int16) > 70
+            ) & (
+                aligned_plate[:, :, 2].astype(np.int16)
+                - aligned_plate[:, :, 0].astype(np.int16) > 70
+            )
+            self.assertGreater(np.count_nonzero(red_pixels), 0)
+            self.assertGreater(np.count_nonzero(cyan_pixels), 0)
+            self.assertEqual(aligned_input.shape, (AUDIO_HEIGHT, AUDIO_WIDTH))
+            self.assertEqual(
+                np.count_nonzero(aligned_input != background),
+                assets["aligned_target_pixel_count"],
+            )
+            self.assertEqual(
+                assets["canonical_target_pixel_count"],
+                assets["aligned_target_pixel_count"],
+            )
+            self.assertEqual(
+                assets["canonical_target_mask_sha256"],
+                assets["aligned_visual_base_mask_sha256"],
+            )
+            self.assertEqual(
+                assets["aligned_target_mask_sha256"],
+                assets["aligned_visual_shifted_mask_sha256"],
+            )
+            self.assertGreater(assets["aligned_visual_overlap_dot_count"], 0)
+            self.assertEqual(
+                assets["aligned_visual_carrier_version"],
+                ALIGNED_VISUAL_CARRIER_VERSION,
+            )
+            self.assertEqual(
+                assets["aligned_visual_pair_axis"], ALIGNED_VISUAL_PAIR_AXIS,
+            )
+            self.assertEqual(
+                assets["aligned_visual_pair_offset_pixels"],
+                ALIGNED_VISUAL_PAIR_OFFSET_PIXELS,
+            )
+            self.assertEqual(
+                assets["aligned_visual_subdot_radii"],
+                list(ALIGNED_VISUAL_SUBDOT_RADII),
+            )
+            self.assertEqual(
+                assets["aligned_visual_density_equivalence_version"],
+                ALIGNED_VISUAL_DENSITY_EQUIVALENCE_VERSION,
+            )
+            self.assertEqual(
+                assets["aligned_visual_subdot_count"],
+                assets["aligned_visual_carrier_dot_count"] * 2,
+            )
+            self.assertEqual(
+                assets["canonical_visual_dot_count"],
+                assets["aligned_visual_base_dot_count"],
+            )
+            self.assertEqual(
+                assets["aligned_visual_base_dot_count"],
+                assets["aligned_visual_shifted_dot_count"],
+            )
+            self.assertEqual(
+                assets["aligned_visual_base_radius_histogram"],
+                assets["aligned_visual_shifted_radius_histogram"],
+            )
+            self.assertEqual(
+                assets["aligned_visual_base_radius_area_units"],
+                assets["aligned_visual_shifted_radius_area_units"],
+            )
+            self.assertEqual(
+                assets["aligned_visual_base_active_pixel_count"],
+                assets["aligned_visual_shifted_active_pixel_count"],
+            )
+            self.assertEqual(
+                assets["balanced_carrier_occupancy_sha256"],
+                assets["canonical_carrier_occupancy_sha256"],
+            )
+            self.assertEqual(
+                assets["canonical_carrier_occupancy_sha256"],
+                assets["aligned_carrier_occupancy_sha256"],
+            )
+
+    def test_aligned_visual_uses_bijective_complete_subdots_with_exact_density(self):
+        layout_rng = np.random.default_rng(17)
+        dots = plate_renderer.make_dot_layout(layout_rng)
+        target = plate_renderer.draw_geometry_mask(["zero-o"])
+        canonical, canonical_stats = plate_renderer._draw_balanced_dyad_plate(
+            dots,
+            [target],
+            (plate_renderer.CANONICAL_TARGET_COLOUR,),
+            np.random.default_rng(23),
+            shift_audio_dx=ALIGNED_DISPLACEMENT_AUDIO_PIXELS,
+        )
+        aligned, aligned_stats = plate_renderer._draw_balanced_dyad_plate(
+            dots,
+            [target],
+            (plate_renderer.CANONICAL_TARGET_COLOUR,),
+            np.random.default_rng(23),
+            shift_audio_dx=ALIGNED_DISPLACEMENT_AUDIO_PIXELS,
+            copy_channel_a_to_b=True,
+        )
+        self.assertEqual(
+            canonical_stats["carrier_occupancy_sha256"],
+            aligned_stats["carrier_occupancy_sha256"],
+        )
+        self.assertEqual(
+            aligned_stats["channel_a_dot_count"],
+            aligned_stats["channel_b_dot_count"],
+        )
+        self.assertEqual(
+            aligned_stats["channel_a_radius_histogram"],
+            aligned_stats["channel_b_radius_histogram"],
+        )
+        self.assertEqual(
+            aligned_stats["channel_a_radius_area_units"],
+            aligned_stats["channel_b_radius_area_units"],
+        )
+        self.assertEqual(
+            aligned_stats["channel_a_active_pixel_count"],
+            aligned_stats["channel_b_active_pixel_count"],
+        )
+        self.assertFalse(np.array_equal(
+            np.asarray(canonical), np.asarray(aligned),
+        ))
+
     def test_difficulty_model_uses_pixels_alternative_foils_and_outcome_space(self):
         family = self.family_by_source["l"]
         choices = [["c"], ["l"], ["u"], ["zero-o"]]
@@ -506,6 +726,48 @@ class AdvancedGeneratorTests(unittest.TestCase):
             else:
                 self.assertEqual(trial["plate_png"], stimulus["ir_plate_png"])
                 self.assertEqual(trial["audio_wav"], stimulus["ir_probe_wav"])
+
+    def test_four_way_plan_obeys_identity_change_and_split_laws(self):
+        plan = generator.plan_session({
+            "split": "test",
+            "signalMode": "mixed-aligned",
+            "baseStimulusCount": 30,
+            "mixedConditionRatio": "1:1:1:2",
+            "seed": 1729,
+        }, grammar=self.grammar)
+        self.assertEqual(plan["condition_quotas"], {
+            "visual_background_audio": 6,
+            "visual_aligned_overlay": 6,
+            "visual_aligned_ir_audio": 6,
+            "ir_audio": 12,
+        })
+        self.assertEqual(plan["eligible_by_glyph_count"], {
+            1: 30, 2: 900, 3: 27000,
+        })
+        self.assertTrue(plan["combinatorial_verification"]["verified"])
+        self.assertEqual(
+            plan["combinatorial_verification"]["eligible_by_glyph_count"]["1"],
+            {"identity": 6, "changed": 24, "total": 30},
+        )
+        one_glyph_identities = []
+        for spec in plan["base_specs"]:
+            if spec["assignedCondition"] in generator.ALIGNED_IDENTITY_CONDITIONS:
+                self.assertEqual(spec["mappingClass"], "identity")
+                self.assertEqual(spec["changedCount"], 0)
+                self.assertEqual(spec["sourceIds"], spec["targetIds"])
+                if len(spec["sourceIds"]) == 1:
+                    one_glyph_identities.append(spec["sourceIds"][0])
+            else:
+                self.assertEqual(spec["mappingClass"], "changed")
+                self.assertGreaterEqual(spec["changedCount"], 1)
+            self.assertEqual(len({tuple(item) for item in spec["choiceTargets"]}), 4)
+        self.assertEqual(set(one_glyph_identities), {
+            "gamma", "v", "j", "four", "e", "h",
+        })
+        self.assertEqual(
+            len({item["transformationSignature"] for item in plan["base_specs"]}),
+            30,
+        )
 
     def test_paired_schedule_counterbalances_separates_and_reshuffles_choices(self):
         stimuli = [self._schedule_stimulus(index, score) for index, score in enumerate(
@@ -693,6 +955,136 @@ class AdvancedGeneratorTests(unittest.TestCase):
             mixed_manifest["trials"][0]["audio_wav"] = original_audio
             self.assertTrue(generator.manifest_is_complete(
                 mixed_manifest, mixed_path.parent,
+            ))
+
+            aligned_path, aligned_manifest = generator.prepare_session(
+                {
+                    **common,
+                    "signalMode": "mixed-aligned",
+                    "baseStimulusCount": 10,
+                    "mixedConditionRatio": "1:1:1:2",
+                },
+                root,
+            )
+            self.assertEqual(aligned_manifest["condition_distribution"], {
+                "visual_background_audio": 2,
+                "visual_aligned_overlay": 2,
+                "visual_aligned_ir_audio": 2,
+                "ir_audio": 4,
+            })
+            self.assertEqual(
+                aligned_manifest["condition_assignment"]["condition_ratio"],
+                "1:1:1:2",
+            )
+            self.assertTrue(
+                aligned_manifest["combinatorial_verification"]["verified"]
+            )
+            self.assertEqual(
+                aligned_manifest["combinatorial_verification"]
+                ["identity_density_balance"]["load_basis"],
+                "rendered_signal_dot_count",
+            )
+            self.assertEqual(len({
+                stimulus["aligned_visual_carrier_occupied_pixel_count"]
+                for stimulus in aligned_manifest["stimuli"]
+            }), 1)
+            signal_density = aligned_manifest["condition_assignment"][
+                "visible_signal_density_balance"
+            ]
+            self.assertTrue(signal_density["carrier_density_is_fixed_separately"])
+            self.assertEqual(
+                set(signal_density["by_condition"]),
+                set(generator.ALIGNED_MIXED_CONDITIONS),
+            )
+            for stimulus in aligned_manifest["stimuli"]:
+                condition = stimulus["assigned_condition"]
+                if condition in generator.ALIGNED_IDENTITY_CONDITIONS:
+                    self.assertEqual(stimulus["mapping_class"], "identity")
+                    self.assertEqual(stimulus["source_ids"], stimulus["target_ids"])
+                    self.assertIsNone(stimulus["decoy_choice_id"])
+                    self.assertTrue(
+                        (
+                            aligned_path.parent
+                            / stimulus["canonical_visual_plate_png"]
+                        ).is_file()
+                    )
+                    self.assertTrue(
+                        (
+                            aligned_path.parent
+                            / stimulus["visual_aligned_plate_png"]
+                        ).is_file()
+                    )
+                    self.assertTrue(
+                        (aligned_path.parent / stimulus["aligned_input_png"]).is_file()
+                    )
+                    self.assertEqual(
+                        stimulus["canonical_target_mask_sha256"],
+                        stimulus["aligned_visual_base_mask_sha256"],
+                    )
+                    self.assertEqual(
+                        stimulus["aligned_target_mask_sha256"],
+                        stimulus["aligned_visual_shifted_mask_sha256"],
+                    )
+                    self.assertEqual(
+                        stimulus["aligned_visual_carrier_version"],
+                        ALIGNED_VISUAL_CARRIER_VERSION,
+                    )
+                    self.assertEqual(
+                        stimulus["aligned_visual_subdot_count"],
+                        stimulus["aligned_visual_carrier_dot_count"] * 2,
+                    )
+                    self.assertEqual(
+                        stimulus["canonical_visual_dot_count"],
+                        stimulus["visible_signal_dot_count"],
+                    )
+                else:
+                    self.assertEqual(stimulus["mapping_class"], "changed")
+                    self.assertGreaterEqual(stimulus["changed_count"], 1)
+                if condition == "visual_aligned_ir_audio":
+                    self.assertIsNotNone(stimulus["aligned_target_wav"])
+                    self.assertIsNone(stimulus["background_wav"])
+                    self.assertIn(
+                        "aligned_target",
+                        stimulus["audio_normalization"]["counterfactuals"],
+                    )
+                elif condition in {
+                    "visual_background_audio", "visual_aligned_overlay",
+                }:
+                    self.assertIsNotNone(stimulus["background_wav"])
+                    self.assertIsNone(stimulus["aligned_target_wav"])
+                else:
+                    self.assertIsNotNone(stimulus["ir_probe_wav"])
+            self.assertTrue(generator.manifest_is_complete(
+                aligned_manifest, aligned_path.parent,
+            ))
+            identity_stimulus = next(
+                item for item in aligned_manifest["stimuli"]
+                if item["assigned_condition"] in generator.ALIGNED_IDENTITY_CONDITIONS
+            )
+            original_digest = identity_stimulus["aligned_visual_base_mask_sha256"]
+            identity_stimulus["aligned_visual_base_mask_sha256"] = "0" * 64
+            self.assertFalse(generator.manifest_is_complete(
+                aligned_manifest, aligned_path.parent,
+            ))
+            identity_stimulus["aligned_visual_base_mask_sha256"] = original_digest
+            original_carrier = identity_stimulus["aligned_visual_carrier_version"]
+            identity_stimulus["aligned_visual_carrier_version"] = "split-halves-v0"
+            self.assertFalse(generator.manifest_is_complete(
+                aligned_manifest, aligned_path.parent,
+            ))
+            identity_stimulus["aligned_visual_carrier_version"] = original_carrier
+            complementary = next(
+                item for item in aligned_manifest["stimuli"]
+                if item["assigned_condition"] == "ir_audio"
+            )
+            original_class = complementary["mapping_class"]
+            complementary["mapping_class"] = "identity"
+            self.assertFalse(generator.manifest_is_complete(
+                aligned_manifest, aligned_path.parent,
+            ))
+            complementary["mapping_class"] = original_class
+            self.assertTrue(generator.manifest_is_complete(
+                aligned_manifest, aligned_path.parent,
             ))
 
             paired_path, paired_manifest = generator.prepare_session(
@@ -1111,7 +1503,11 @@ class AdvancedGeneratorTests(unittest.TestCase):
 
     @classmethod
     def _write_fake_soundscape(cls, _png_path, wav_path, *_args, **_kwargs):
-        amplitude = 1_800 if "probe" in wav_path.name else 200
+        amplitude = (
+            1_800
+            if "probe" in wav_path.name or "aligned_target" in wav_path.name
+            else 200
+        )
         cls._write_wav(wav_path, amplitude)
 
     @staticmethod

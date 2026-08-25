@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import itertools
 from pathlib import Path
 
@@ -14,6 +15,7 @@ PLATE_SCALE = 4
 PLATE_WIDTH = AUDIO_WIDTH * PLATE_SCALE
 PLATE_HEIGHT = AUDIO_HEIGHT * PLATE_SCALE
 DOT_STEP = 16
+ALIGNED_DISPLACEMENT_AUDIO_PIXELS = DOT_STEP // PLATE_SCALE
 
 GEOMETRY_SEGMENTS: dict[str, tuple[str, ...]] = {
     "one": ("right-upper", "right-lower"),
@@ -84,7 +86,20 @@ SOURCE_COLOURS = (
     (65, 125, 224),
 )
 VISIBLE_PROBE_COLOUR = (238, 198, 63)
+ALIGNED_VISUAL_COLOURS = (
+    (70, 205, 220),
+    (216, 102, 226),
+    (244, 156, 66),
+)
 BACKGROUND_COLOUR = (54, 56, 58)
+CANONICAL_TARGET_COLOUR = (220, 62, 68)
+ALIGNED_TARGET_COLOUR = (70, 205, 220)
+ALIGNED_VISUAL_CARRIER_VERSION = "balanced-bijective-diagonal-dyads-v2"
+ALIGNED_VISUAL_DENSITY_EQUIVALENCE_VERSION = "exact-token-radius-area-v1"
+ALIGNED_VISUAL_PAIR_AXIS = "seeded-diagonal"
+ALIGNED_VISUAL_PAIR_OFFSET_PIXELS = 3
+ALIGNED_VISUAL_SUBDOT_RADII = (3, 4)
+PLATE_BACKGROUND_COLOUR = (31, 32, 33)
 
 
 def segment_closure_relations() -> set[tuple[str, str]]:
@@ -128,6 +143,30 @@ def draw_position_masks(geometry_ids: tuple[str, ...] | list[str]) -> list[Image
         draw_symbol(ImageDraw.Draw(mask), geometry_id, box, 6)
         masks.append(mask)
     return masks
+
+
+def translate_mask_without_clipping(
+    mask: Image.Image,
+    dx: int,
+    dy: int,
+) -> Image.Image:
+    """Translate a mask without wraparound and reject cropped geometry."""
+    translated = Image.new("L", mask.size, 0)
+    translated.paste(mask, (dx, dy))
+    original_count = int(np.count_nonzero(np.asarray(mask)))
+    translated_count = int(np.count_nonzero(np.asarray(translated)))
+    if translated_count != original_count:
+        raise ValueError(
+            f"aligned displacement clips geometry: dx={dx}, dy={dy}, "
+            f"before={original_count}, after={translated_count}"
+        )
+    return translated
+
+
+def mask_digest(mask: Image.Image) -> str:
+    """Return a stable digest of binary geometry membership."""
+    binary = np.packbits(np.asarray(mask) > 0)
+    return hashlib.sha256(binary.tobytes()).hexdigest()
 
 
 def draw_symbol(
@@ -201,9 +240,12 @@ def render_trial_images(
     output_dir: Path,
     stem: str,
     seed: int,
+    *,
+    include_aligned_assets: bool = False,
+    include_balanced_carrier_assets: bool = False,
 ) -> dict:
     rng = np.random.default_rng(seed)
-    source_mask, diagnostic_mask, _target_mask = difference_mask(source_ids, target_ids)
+    source_mask, diagnostic_mask, target_mask = difference_mask(source_ids, target_ids)
     source_position_masks = draw_position_masks(source_ids)
     dots = make_dot_layout(rng)
     plate_colour_seed = int(rng.integers(0, 2**32, dtype=np.uint32))
@@ -217,6 +259,63 @@ def render_trial_images(
         np.random.default_rng(plate_colour_seed), True,
     )
     ir_input, background_input = _make_audio_inputs(diagnostic_mask, rng)
+
+    balanced_assets = {}
+    aligned_assets = {}
+    if include_balanced_carrier_assets or include_aligned_assets:
+        aligned_dx = (
+            ALIGNED_DISPLACEMENT_AUDIO_PIXELS
+            if seed % 2 == 0 else -ALIGNED_DISPLACEMENT_AUDIO_PIXELS
+        )
+        aligned_dy = 0
+    if include_balanced_carrier_assets or include_aligned_assets:
+        balanced_source_plate, balanced_source_stats = _draw_balanced_dyad_plate(
+            dots,
+            source_position_masks,
+            SOURCE_COLOURS,
+            np.random.default_rng(plate_colour_seed),
+            shift_audio_dx=aligned_dx,
+        )
+    if include_aligned_assets:
+        aligned_target_mask = translate_mask_without_clipping(
+            target_mask, aligned_dx, aligned_dy,
+        )
+        canonical_visual_plate, canonical_stats = _draw_balanced_dyad_plate(
+            dots,
+            [target_mask],
+            (CANONICAL_TARGET_COLOUR,),
+            np.random.default_rng(plate_colour_seed),
+            shift_audio_dx=aligned_dx,
+        )
+        aligned_visual_plate, aligned_stats = _draw_balanced_dyad_plate(
+            dots,
+            [target_mask],
+            (CANONICAL_TARGET_COLOUR,),
+            np.random.default_rng(plate_colour_seed),
+            shift_audio_dx=aligned_dx,
+            copy_channel_a_to_b=True,
+        )
+        if (
+            canonical_stats["carrier_occupancy_sha256"]
+            != aligned_stats["carrier_occupancy_sha256"]
+        ):
+            raise RuntimeError("canonical and aligned carrier geometry differ")
+        if (
+            aligned_stats["channel_a_dot_count"]
+            != aligned_stats["channel_b_dot_count"]
+            or aligned_stats["channel_a_radius_histogram"]
+            != aligned_stats["channel_b_radius_histogram"]
+            or aligned_stats["channel_a_radius_area_units"]
+            != aligned_stats["channel_b_radius_area_units"]
+            or aligned_stats["channel_a_active_pixel_count"]
+            != aligned_stats["channel_b_active_pixel_count"]
+        ):
+            raise RuntimeError("aligned visible channels differ in density")
+        aligned_input = _make_probe_from_background(
+            aligned_target_mask,
+            background_input,
+            np.random.default_rng(seed ^ 0xA11C_4EED),
+        )
 
     plate_dir = output_dir / "plates"
     audio_input_dir = output_dir / "audio_inputs"
@@ -233,6 +332,129 @@ def render_trial_images(
     visual_plate.save(visual_plate_path)
     ir_input.save(ir_input_path)
     background_input.save(background_input_path)
+    if include_balanced_carrier_assets or include_aligned_assets:
+        balanced_source_path = plate_dir / f"{stem}_balanced_source.png"
+        balanced_source_plate.save(balanced_source_path)
+        balanced_assets = {
+            "balanced_carrier_ir_plate_png": str(
+                balanced_source_path.relative_to(output_dir)
+            ),
+            "aligned_displacement_audio_dx": aligned_dx,
+            "aligned_displacement_audio_dy": aligned_dy,
+            "aligned_displacement_audio_pixels": (
+                ALIGNED_DISPLACEMENT_AUDIO_PIXELS
+            ),
+            "aligned_displacement_plate_pixels": (
+                ALIGNED_DISPLACEMENT_AUDIO_PIXELS * PLATE_SCALE
+            ),
+            "aligned_visual_carrier_version": (
+                ALIGNED_VISUAL_CARRIER_VERSION
+            ),
+            "aligned_visual_density_equivalence_version": (
+                ALIGNED_VISUAL_DENSITY_EQUIVALENCE_VERSION
+            ),
+            "aligned_visual_pair_axis": ALIGNED_VISUAL_PAIR_AXIS,
+            "aligned_visual_pair_offset_pixels": (
+                ALIGNED_VISUAL_PAIR_OFFSET_PIXELS
+            ),
+            "aligned_visual_subdot_radii": list(
+                ALIGNED_VISUAL_SUBDOT_RADII
+            ),
+            "aligned_visual_carrier_dot_count": balanced_source_stats[
+                "carrier_dot_count"
+            ],
+            "aligned_visual_subdot_count": balanced_source_stats[
+                "subdot_count"
+            ],
+            "aligned_visual_carrier_radius_histogram": (
+                balanced_source_stats["carrier_radius_histogram"]
+            ),
+            "aligned_visual_carrier_occupied_pixel_count": (
+                balanced_source_stats["carrier_occupied_pixel_count"]
+            ),
+            "balanced_carrier_occupancy_sha256": balanced_source_stats[
+                "carrier_occupancy_sha256"
+            ],
+            "balanced_visual_source_dot_count": balanced_source_stats[
+                "channel_a_dot_count"
+            ],
+            "balanced_visual_source_radius_histogram": balanced_source_stats[
+                "channel_a_radius_histogram"
+            ],
+            "balanced_visual_source_radius_area_units": balanced_source_stats[
+                "channel_a_radius_area_units"
+            ],
+            "balanced_visual_source_active_pixel_count": balanced_source_stats[
+                "channel_a_active_pixel_count"
+            ],
+        }
+    if include_aligned_assets:
+        canonical_plate_path = plate_dir / f"{stem}_visual_canonical.png"
+        aligned_plate_path = plate_dir / f"{stem}_visual_aligned.png"
+        aligned_input_path = audio_input_dir / f"{stem}_aligned_target.png"
+        canonical_visual_plate.save(canonical_plate_path)
+        aligned_visual_plate.save(aligned_plate_path)
+        aligned_input.save(aligned_input_path)
+        aligned_assets = {
+            "canonical_visual_plate_png": str(
+                canonical_plate_path.relative_to(output_dir)
+            ),
+            "visual_aligned_plate_png": str(
+                aligned_plate_path.relative_to(output_dir)
+            ),
+            "aligned_input_png": str(aligned_input_path.relative_to(output_dir)),
+            "aligned_target_pixel_count": int(
+                np.count_nonzero(np.asarray(aligned_target_mask))
+            ),
+            "canonical_target_pixel_count": int(
+                np.count_nonzero(np.asarray(target_mask))
+            ),
+            "canonical_visual_dot_count": canonical_stats[
+                "channel_a_dot_count"
+            ],
+            "aligned_visual_base_dot_count": aligned_stats[
+                "channel_a_dot_count"
+            ],
+            "aligned_visual_shifted_dot_count": aligned_stats[
+                "channel_b_dot_count"
+            ],
+            "aligned_visual_overlap_dot_count": aligned_stats[
+                "channel_overlap_dot_count"
+            ],
+            "aligned_visual_base_radius_histogram": aligned_stats[
+                "channel_a_radius_histogram"
+            ],
+            "aligned_visual_shifted_radius_histogram": aligned_stats[
+                "channel_b_radius_histogram"
+            ],
+            "aligned_visual_base_radius_area_units": aligned_stats[
+                "channel_a_radius_area_units"
+            ],
+            "aligned_visual_shifted_radius_area_units": aligned_stats[
+                "channel_b_radius_area_units"
+            ],
+            "aligned_visual_base_active_pixel_count": aligned_stats[
+                "channel_a_active_pixel_count"
+            ],
+            "aligned_visual_shifted_active_pixel_count": aligned_stats[
+                "channel_b_active_pixel_count"
+            ],
+            "canonical_carrier_occupancy_sha256": canonical_stats[
+                "carrier_occupancy_sha256"
+            ],
+            "aligned_carrier_occupancy_sha256": aligned_stats[
+                "carrier_occupancy_sha256"
+            ],
+            "canonical_target_mask_sha256": mask_digest(target_mask),
+            "aligned_target_mask_sha256": mask_digest(aligned_target_mask),
+            "aligned_visual_base_mask_sha256": mask_digest(target_mask),
+            "aligned_visual_shifted_mask_sha256": mask_digest(
+                aligned_target_mask
+            ),
+            "alignment_equivalence_version": "canonical-target-mask-v1",
+            "aligned_visual_base_channel_position": "seeded-diagonal-a",
+            "aligned_visual_shifted_channel_position": "seeded-diagonal-b",
+        }
 
     choices = []
     for index, geometry_ids in enumerate(choice_targets):
@@ -255,6 +477,8 @@ def render_trial_images(
         "choices": choices,
         "source_pixel_count": int(np.count_nonzero(source_values)),
         "diagnostic_pixel_count": int(np.count_nonzero(diagnostic_values)),
+        **balanced_assets,
+        **aligned_assets,
     }
 
 
@@ -264,11 +488,16 @@ def _draw_plate(
     diagnostic_mask: Image.Image,
     rng: np.random.Generator,
     reveal_probe: bool,
+    *,
+    aligned_position_masks: list[Image.Image] | None = None,
 ) -> Image.Image:
     plate = Image.new("RGB", (PLATE_WIDTH, PLATE_HEIGHT), (31, 32, 33))
     draw = ImageDraw.Draw(plate)
     source_arrays = [np.asarray(mask) > 0 for mask in source_position_masks]
     diagnostic = np.asarray(diagnostic_mask) > 0
+    aligned_arrays = [
+        np.asarray(mask) > 0 for mask in (aligned_position_masks or [])
+    ]
 
     for x, y, radius in dots:
         audio_x = min(AUDIO_WIDTH - 1, x // PLATE_SCALE)
@@ -285,11 +514,257 @@ def _draw_plate(
                 break
         if diagnostic[audio_y, audio_x] and reveal_probe:
             colour = diagnostic_colour
+        for position, aligned in enumerate(aligned_arrays):
+            if aligned[audio_y, audio_x]:
+                colour = _vary_colour(ALIGNED_VISUAL_COLOURS[position], rng)
+                break
         draw.ellipse(
             (x - radius, y - radius, x + radius, y + radius),
             fill=colour,
         )
     return plate
+
+
+def _dot_cell_key(x: int, y: int) -> tuple[int, int]:
+    """Recover the stable grid cell underlying one jittered parent dot."""
+    first = DOT_STEP // 2
+    column_count = len(range(first, PLATE_WIDTH, DOT_STEP))
+    row_count = len(range(first, PLATE_HEIGHT, DOT_STEP))
+    column = int(round((x - first) / DOT_STEP))
+    row = int(round((y - first) / DOT_STEP))
+    return (
+        int(np.clip(column, 0, column_count - 1)),
+        int(np.clip(row, 0, row_count - 1)),
+    )
+
+
+def _circle_box(
+    centre_x: int,
+    centre_y: int,
+    radius: int,
+) -> tuple[int, int, int, int]:
+    return (
+        centre_x - radius,
+        centre_y - radius,
+        centre_x + radius,
+        centre_y + radius,
+    )
+
+
+def _radius_histogram(radii: list[int]) -> dict[str, int]:
+    return {
+        str(radius): radii.count(radius)
+        for radius in ALIGNED_VISUAL_SUBDOT_RADII
+    }
+
+
+def _draw_balanced_dyad_plate(
+    dots: list[tuple[int, int, int]],
+    channel_a_masks: list[Image.Image],
+    channel_a_colours: tuple[tuple[int, int, int], ...],
+    rng: np.random.Generator,
+    *,
+    shift_audio_dx: int,
+    copy_channel_a_to_b: bool = False,
+) -> tuple[Image.Image, dict]:
+    """Render a density-balanced two-layer carrier using complete subdots.
+
+    Every grid cell contains one A and one B subdot on a seeded diagonal. The
+    two layers receive the same fixed radius multiset. When B is informative,
+    its active cells are a bijective one-cell translation of A's sampled cells;
+    B is never independently resampled from the shifted raster mask.
+    """
+    if len(channel_a_colours) < len(channel_a_masks):
+        raise ValueError("each channel-A mask requires one colour")
+    shift_plate_pixels = shift_audio_dx * PLATE_SCALE
+    if shift_plate_pixels % DOT_STEP != 0:
+        raise ValueError("aligned displacement must be a whole carrier cell")
+    shift_cells = shift_plate_pixels // DOT_STEP
+    if abs(shift_cells) != 1:
+        raise ValueError("balanced dyad carrier requires a one-cell shift")
+    geometry_rng = np.random.default_rng(
+        int(rng.integers(0, 2**32, dtype=np.uint32)),
+    )
+    colour_rng = np.random.default_rng(
+        int(rng.integers(0, 2**32, dtype=np.uint32)),
+    )
+
+    first = DOT_STEP // 2
+    columns = tuple(range(first, PLATE_WIDTH, DOT_STEP))
+    rows = tuple(range(first, PLATE_HEIGHT, DOT_STEP))
+    dot_by_cell = {
+        _dot_cell_key(x, y): (x, y, radius) for x, y, radius in dots
+    }
+    expected_cells = len(columns) * len(rows)
+    if len(dot_by_cell) != expected_cells:
+        raise RuntimeError("jittered dot layout does not map one-to-one to cells")
+
+    ordered_cells = [
+        (column, row)
+        for row in range(len(rows))
+        for column in range(len(columns))
+    ]
+    if (
+        len(ALIGNED_VISUAL_SUBDOT_RADII) != 2
+        or len(columns) % 2
+    ):
+        raise RuntimeError("balanced radius alternation requires two radii and even columns")
+    small_radius, large_radius = ALIGNED_VISUAL_SUBDOT_RADII
+    row_phase = {
+        row: int(geometry_rng.integers(0, 2)) for row in range(len(rows))
+    }
+    channel_a_radius = {
+        (column, row): (
+            small_radius
+            if (column + row_phase[row]) % 2 == 0
+            else large_radius
+        )
+        for column, row in ordered_cells
+    }
+    channel_b_radius = {
+        (column, row): channel_a_radius[
+            ((column - shift_cells) % len(columns), row)
+        ]
+        for column, row in ordered_cells
+    }
+    channel_a_arrays = [np.asarray(mask) > 0 for mask in channel_a_masks]
+    channel_a_position: dict[tuple[int, int], int | None] = {}
+    for cell, (x, y, _parent_radius) in dot_by_cell.items():
+        audio_x = min(AUDIO_WIDTH - 1, x // PLATE_SCALE)
+        audio_y = min(AUDIO_HEIGHT - 1, y // PLATE_SCALE)
+        channel_a_position[cell] = next((
+            position
+            for position, values in enumerate(channel_a_arrays)
+            if values[audio_y, audio_x]
+        ), None)
+
+    plate = Image.new(
+        "RGB", (PLATE_WIDTH, PLATE_HEIGHT), PLATE_BACKGROUND_COLOUR,
+    )
+    draw = ImageDraw.Draw(plate)
+    carrier_mask = Image.new("L", plate.size, 0)
+    carrier_draw = ImageDraw.Draw(carrier_mask)
+    channel_a_active_mask = Image.new("L", plate.size, 0)
+    channel_a_active_draw = ImageDraw.Draw(channel_a_active_mask)
+    channel_b_active_mask = Image.new("L", plate.size, 0)
+    channel_b_active_draw = ImageDraw.Draw(channel_b_active_mask)
+    channel_a_active_radii = []
+    channel_b_active_radii = []
+    overlap_count = 0
+
+    for column, row in ordered_cells:
+        cell = (column, row)
+        original_x, original_y, _parent_radius = dot_by_cell[cell]
+        nominal_x = columns[column]
+        nominal_y = rows[row]
+        a_radius = channel_a_radius[cell]
+        b_radius = channel_b_radius[cell]
+        safe_jitter = max(
+            0,
+            7 - ALIGNED_VISUAL_PAIR_OFFSET_PIXELS - max(a_radius, b_radius),
+        )
+        centre_x = nominal_x + int(np.clip(
+            round((original_x - nominal_x) / 5), -safe_jitter, safe_jitter,
+        ))
+        centre_y = nominal_y + int(np.clip(
+            round((original_y - nominal_y) / 5), -safe_jitter, safe_jitter,
+        ))
+        diagonal_y = (
+            ALIGNED_VISUAL_PAIR_OFFSET_PIXELS
+            if int(geometry_rng.integers(0, 2))
+            else -ALIGNED_VISUAL_PAIR_OFFSET_PIXELS
+        )
+        role_sign = 1 if int(geometry_rng.integers(0, 2)) else -1
+        vector_x = role_sign * ALIGNED_VISUAL_PAIR_OFFSET_PIXELS
+        vector_y = role_sign * diagonal_y
+        a_box = _circle_box(
+            centre_x + vector_x, centre_y + vector_y, a_radius,
+        )
+        b_box = _circle_box(
+            centre_x - vector_x, centre_y - vector_y, b_radius,
+        )
+
+        a_position = channel_a_position[cell]
+        source_column = column - shift_cells
+        b_source = (source_column, row)
+        b_active = (
+            copy_channel_a_to_b
+            and 0 <= source_column < len(columns)
+            and channel_a_position[b_source] is not None
+        )
+        a_active = a_position is not None
+        overlap_count += int(a_active and b_active)
+        if a_active:
+            channel_a_active_radii.append(a_radius)
+        if b_active:
+            channel_b_active_radii.append(b_radius)
+
+        a_background = _vary_colour(BACKGROUND_COLOUR, colour_rng)
+        b_background = _vary_colour(BACKGROUND_COLOUR, colour_rng)
+        varied_a_colours = [
+            _vary_colour(colour, colour_rng)
+            for colour in channel_a_colours[:len(channel_a_masks)]
+        ]
+        b_colour = _vary_colour(ALIGNED_TARGET_COLOUR, colour_rng)
+        draw.ellipse(
+            a_box,
+            fill=(
+                varied_a_colours[a_position]
+                if a_position is not None else a_background
+            ),
+        )
+        draw.ellipse(
+            b_box,
+            fill=b_colour if b_active else b_background,
+        )
+        carrier_draw.ellipse(a_box, fill=255)
+        carrier_draw.ellipse(b_box, fill=255)
+        if a_active:
+            channel_a_active_draw.ellipse(a_box, fill=255)
+        if b_active:
+            channel_b_active_draw.ellipse(b_box, fill=255)
+
+    if copy_channel_a_to_b and len(channel_a_active_radii) != len(
+        channel_b_active_radii
+    ):
+        raise ValueError("one-cell shift clips active visual carrier tokens")
+
+    carrier_values = np.asarray(carrier_mask) > 0
+    channel_a_values = np.asarray(channel_a_active_mask) > 0
+    channel_b_values = np.asarray(channel_b_active_mask) > 0
+    all_a_radii = list(channel_a_radius.values())
+    all_b_radii = list(channel_b_radius.values())
+    return plate, {
+        "carrier_dot_count": expected_cells,
+        "subdot_count": expected_cells * 2,
+        "carrier_radius_histogram": {
+            "channel_a": _radius_histogram(all_a_radii),
+            "channel_b": _radius_histogram(all_b_radii),
+        },
+        "carrier_occupied_pixel_count": int(np.count_nonzero(carrier_values)),
+        "carrier_occupancy_sha256": mask_digest(carrier_mask),
+        "channel_a_dot_count": len(channel_a_active_radii),
+        "channel_b_dot_count": len(channel_b_active_radii),
+        "channel_overlap_dot_count": overlap_count,
+        "channel_a_radius_histogram": _radius_histogram(
+            channel_a_active_radii
+        ),
+        "channel_b_radius_histogram": _radius_histogram(
+            channel_b_active_radii
+        ),
+        "channel_a_radius_area_units": sum(
+            radius * radius for radius in channel_a_active_radii
+        ),
+        "channel_b_radius_area_units": sum(
+            radius * radius for radius in channel_b_active_radii
+        ),
+        "channel_a_active_pixel_count": int(
+            np.count_nonzero(channel_a_values)
+        ),
+        "channel_b_active_pixel_count": int(
+            np.count_nonzero(channel_b_values)
+        ),
+    }
 
 
 def _make_audio_inputs(
@@ -301,6 +776,17 @@ def _make_audio_inputs(
     diagnostic = np.asarray(diagnostic_mask) > 0
     probe[diagnostic] = rng.integers(210, 256, size=int(diagnostic.sum()), dtype=np.uint8)
     return Image.fromarray(probe, mode="L"), Image.fromarray(background, mode="L")
+
+
+def _make_probe_from_background(
+    probe_mask: Image.Image,
+    background_input: Image.Image,
+    rng: np.random.Generator,
+) -> Image.Image:
+    probe = np.asarray(background_input).copy()
+    active = np.asarray(probe_mask) > 0
+    probe[active] = rng.integers(210, 256, size=int(active.sum()), dtype=np.uint8)
+    return Image.fromarray(probe, mode="L")
 
 
 def render_choice(geometry_ids: list[str]) -> Image.Image:

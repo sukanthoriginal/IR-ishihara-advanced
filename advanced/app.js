@@ -13,6 +13,7 @@ const NATIVE_HEIGHT = 256;
 const MAX_UINT32 = 0xFFFFFFFF;
 const ESTIMATED_RESPONSE_SECONDS = 2;
 const HISTORICAL_REPEAT_THRESHOLD = 0.10;
+const DEFAULT_MIXED_ALIGNED_RATIO = '1:1:1:2';
 
 const setupScreen = document.getElementById('setup-screen');
 const trialScreen = document.getElementById('trial-screen');
@@ -105,6 +106,7 @@ document.getElementById('new-seed-btn').addEventListener('click', () => {
 for (const id of [
   'split', 'signal-mode', 'base-stimulus-count', 'progression',
   'feedback-enabled', 'glyph-composition', 'seed',
+  'mixed-condition-ratio',
 ]) {
   document.getElementById(id).addEventListener('input', () => {
     updateSetupPreview();
@@ -514,6 +516,13 @@ async function prepareBlock() {
   ) {
     return showPrepareError('Run code must be a whole number from 0 to 4294967295.');
   }
+  if (initialSnapshot.signalMode === 'mixed-aligned') {
+    try {
+      parseMixedConditionRatio(initialSnapshot.mixedConditionRatio);
+    } catch (error) {
+      return showPrepareError(String(error.message || error));
+    }
+  }
 
   const generationToken = ++preparationGeneration;
   activePreparationToken = generationToken;
@@ -531,6 +540,7 @@ async function prepareBlock() {
   prepareStatus.className = 'status';
   prepareStatus.textContent = {
     mixed: 'Generating the carrier-controlled visual/IR schedule and audio cache…',
+    'mixed-aligned': 'Generating the four-way aligned visual/IR schedule and audio cache…',
     visual: 'Generating the frozen silent visual schedule…',
     ir: 'Generating the frozen IR-audio schedule and audio cache…',
     paired: 'Generating the repeated-pair schedule and complete audio cache…',
@@ -643,6 +653,7 @@ function readPreparationSnapshot() {
     glyphComposition: document.getElementById('glyph-composition').value,
     progression: document.getElementById('progression').value,
     feedbackEnabled: document.getElementById('feedback-enabled').value === 'on',
+    mixedConditionRatio: document.getElementById('mixed-condition-ratio').value.trim(),
     seed: seedText === '' ? NaN : Number(seedText),
   };
 }
@@ -661,6 +672,7 @@ function preparationSnapshotsEqual(left, right) {
     && left.glyphComposition === right.glyphComposition
     && left.progression === right.progression
     && left.feedbackEnabled === right.feedbackEnabled
+    && left.mixedConditionRatio === right.mixedConditionRatio
     && left.seed === right.seed;
 }
 
@@ -1005,6 +1017,13 @@ function updateSetupPreview() {
   const feedbackEnabled = document.getElementById('feedback-enabled').value === 'on';
   const seedValue = document.getElementById('seed').value.trim();
   const seed = seedValue === '' ? NaN : Number(seedValue);
+  const ratioText = document.getElementById('mixed-condition-ratio').value.trim();
+  const ratioField = document.getElementById('mixed-condition-ratio-field');
+  ratioField.classList.toggle('hidden', signalMode !== 'mixed-aligned');
+  let validRatio = true;
+  if (signalMode === 'mixed-aligned') {
+    try { parseMixedConditionRatio(ratioText); } catch (_error) { validRatio = false; }
+  }
   const validCount = Number.isInteger(baseStimulusCount)
     && baseStimulusCount >= 4
     && baseStimulusCount <= 96;
@@ -1025,9 +1044,9 @@ function updateSetupPreview() {
     ? formatGlyphDistribution(baseStimulusCount, glyphComposition, seed)
     : '—';
   document.getElementById('preview-conditions').textContent = (
-    validCount && (signalMode !== 'mixed' || validSeed)
+    validCount && validRatio && (!["mixed", "mixed-aligned"].includes(signalMode) || validSeed)
   )
-    ? formatConditionDistribution(baseStimulusCount, signalMode, seed)
+    ? formatConditionDistribution(baseStimulusCount, signalMode, seed, ratioText)
     : '—';
   document.getElementById('preview-duration').textContent = presentationCount === null
     ? '—'
@@ -1045,6 +1064,9 @@ function updateSetupPreview() {
   if (signalMode === 'paired' && feedbackEnabled) {
     warnings.push('In paired mode, feedback can reveal an answer before its repeated presentation.');
   }
+  if (signalMode === 'mixed-aligned' && feedbackEnabled) {
+    warnings.push('Feedback can train whether aligned and complementary signals should be integrated.');
+  }
   feedbackWarning.textContent = `${warnings.join(' ')}${warnings.length ? ' You can still generate this block.' : ''}`;
   feedbackWarning.classList.toggle('hidden', warnings.length === 0);
 }
@@ -1060,11 +1082,23 @@ function formatGlyphDistribution(count, glyphComposition, seed) {
   return counts.map((value, index) => `${value} × ${index + 1}`).join(' · ');
 }
 
-function formatConditionDistribution(count, signalMode, seed) {
+function formatConditionDistribution(
+  count,
+  signalMode,
+  seed,
+  ratioText = DEFAULT_MIXED_ALIGNED_RATIO,
+) {
   if (signalMode === 'visual') return `${count} visual baseline · silent`;
   if (signalMode === 'ir') return `${count} source scaffold + IR audio`;
   if (signalMode === 'paired') {
     return `${count} visual + neutral carrier · ${count} scaffold + IR · repeated`;
+  }
+  if (signalMode === 'mixed-aligned') {
+    const weights = parseMixedConditionRatio(ratioText);
+    const [carrier, visualAligned, irAligned, complementary] = weightedQuotas(
+      count, weights, seed,
+    );
+    return `${carrier} identity visual · ${visualAligned} identity visual + visual · ${irAligned} identity visual + IR · ${complementary} changed complementary IR`;
   }
   const extraIsVisual = seed % 2 === 0;
   const visualCount = Math.floor(count / 2) + (count % 2 && extraIsVisual ? 1 : 0);
@@ -1073,6 +1107,41 @@ function formatConditionDistribution(count, signalMode, seed) {
     ? ` · seeded extra: ${extraIsVisual ? 'visual + neutral carrier' : 'scaffold + IR'}`
     : '';
   return `${visualCount} visual + neutral carrier · ${irCount} scaffold + IR${seededExtra}`;
+}
+
+function parseMixedConditionRatio(value) {
+  const pieces = String(value).trim().split(':');
+  if (pieces.length !== 4 || pieces.some(piece => !/^[0-9]+$/.test(piece))) {
+    throw new Error('Four-way condition ratio must contain four positive integers, such as 1:1:1:2.');
+  }
+  const weights = pieces.map(Number);
+  if (weights.some(weight => !Number.isSafeInteger(weight) || weight <= 0)) {
+    throw new Error('Four-way condition ratio weights must be positive integers.');
+  }
+  if (weights.reduce((total, weight) => total + weight, 0) > 40) {
+    throw new Error('Four-way condition ratio weights must sum to at most 40.');
+  }
+  return weights;
+}
+
+function weightedQuotas(count, weights, seed) {
+  const totalWeight = weights.reduce((total, weight) => total + weight, 0);
+  const counts = weights.map(weight => Math.floor(count * weight / totalWeight));
+  let remaining = count - counts.reduce((total, value) => total + value, 0);
+  const tieStart = seed % weights.length;
+  const ranked = weights.map((weight, index) => ({
+    index,
+    remainder: (count * weight) % totalWeight,
+    tie: (index - tieStart + weights.length) % weights.length,
+  })).sort((left, right) => (
+    right.remainder - left.remainder || left.tie - right.tie
+  ));
+  for (const item of ranked) {
+    if (!remaining) break;
+    counts[item.index] += 1;
+    remaining -= 1;
+  }
+  return counts;
 }
 
 function formatEstimatedDuration(presentationCount, feedbackEnabled) {
@@ -1099,6 +1168,7 @@ function updatePreparedPreview(generatedManifest, audit) {
     generatedManifest.settings.baseStimulusCount,
     generatedManifest.settings.signalMode,
     audit.effectiveSeed,
+    generatedManifest.settings.mixedConditionRatio,
   );
   document.getElementById('preview-run-code').textContent = (
     audit.requestedSeed === audit.effectiveSeed
@@ -1321,6 +1391,7 @@ function readSessionSettings() {
     glyphComposition: manifest.settings.glyphComposition,
     progression: manifest.settings.progression,
     feedbackEnabled: manifest.settings.feedbackEnabled,
+    mixedConditionRatio: manifest.settings.mixedConditionRatio || null,
     responseDevice: document.getElementById('response-device').value,
     presentation: document.getElementById('presentation').value,
     displayId: document.getElementById('display-id').value.trim(),
@@ -1555,7 +1626,23 @@ async function recordChoice(choice, responsePosition, responseInputMethod) {
       manifest.condition_distribution?.visual_background_audio || 0
     ),
     condition_count_ir_audio: manifest.condition_distribution?.ir_audio || 0,
+    condition_count_visual_aligned_overlay: (
+      manifest.condition_distribution?.visual_aligned_overlay || 0
+    ),
+    condition_count_visual_aligned_ir_audio: (
+      manifest.condition_distribution?.visual_aligned_ir_audio || 0
+    ),
+    mixed_condition_ratio: manifest.settings.mixedConditionRatio,
     condition_assignment_method: manifest.condition_assignment?.method,
+    combinatorial_verification_version: manifest.combinatorial_verification?.version,
+    combinatorial_verification_passed: manifest.combinatorial_verification?.verified ? 1 : 0,
+    combinatorial_mapping_count: manifest.combinatorial_verification?.mapping_count,
+    combinatorial_eligible_by_glyph_json: JSON.stringify(
+      manifest.combinatorial_verification?.eligible_by_glyph_count ?? null,
+    ),
+    condition_by_glyph_count_json: JSON.stringify(
+      manifest.combinatorial_verification?.condition_by_glyph_count ?? null,
+    ),
     difficulty_model_version: manifest.difficulty_model_version,
     condition: trial.condition,
     pair_id: trial.pair_id,
@@ -1569,6 +1656,8 @@ async function recordChoice(choice, responsePosition, responseInputMethod) {
     target_ids: stimulus.target_ids,
     mapping_ids: stimulus.mapping_ids,
     changed_count: stimulus.changed_count,
+    mapping_class: stimulus.mapping_class,
+    choice_rule: stimulus.choice_rule,
     glyph_count: stimulus.source_ids.length,
     transformation_signature: stimulus.transformation_signature,
     mapping_repetition_index: stimulus.mapping_repetition_index,
@@ -1588,6 +1677,76 @@ async function recordChoice(choice, responsePosition, responseInputMethod) {
     ),
     difficulty_match_score_gap: resolveDifficultyMatchScoreGap(trial, stimulus),
     assigned_condition: stimulus.assigned_condition ?? trial.condition,
+    aligned_displacement_audio_dx: trial.aligned_displacement_audio_dx,
+    aligned_displacement_audio_dy: trial.aligned_displacement_audio_dy,
+    aligned_displacement_audio_pixels: trial.aligned_displacement_audio_pixels,
+    aligned_displacement_plate_pixels: trial.aligned_displacement_plate_pixels,
+    aligned_target_pixel_count: stimulus.aligned_target_pixel_count,
+    canonical_target_pixel_count: stimulus.canonical_target_pixel_count,
+    canonical_visual_dot_count: stimulus.canonical_visual_dot_count,
+    aligned_visual_base_dot_count: stimulus.aligned_visual_base_dot_count,
+    aligned_visual_shifted_dot_count: stimulus.aligned_visual_shifted_dot_count,
+    aligned_visual_overlap_dot_count: stimulus.aligned_visual_overlap_dot_count,
+    alignment_equivalence_version: stimulus.alignment_equivalence_version,
+    aligned_visual_carrier_version: stimulus.aligned_visual_carrier_version,
+    aligned_visual_density_equivalence_version: (
+      stimulus.aligned_visual_density_equivalence_version
+    ),
+    aligned_visual_pair_axis: stimulus.aligned_visual_pair_axis,
+    aligned_visual_pair_offset_pixels: stimulus.aligned_visual_pair_offset_pixels,
+    aligned_visual_subdot_radii_json: JSON.stringify(
+      stimulus.aligned_visual_subdot_radii ?? null,
+    ),
+    aligned_visual_carrier_dot_count: stimulus.aligned_visual_carrier_dot_count,
+    aligned_visual_subdot_count: stimulus.aligned_visual_subdot_count,
+    aligned_visual_carrier_radius_histogram_json: JSON.stringify(
+      stimulus.aligned_visual_carrier_radius_histogram ?? null,
+    ),
+    aligned_visual_carrier_occupied_pixel_count: (
+      stimulus.aligned_visual_carrier_occupied_pixel_count
+    ),
+    visible_signal_dot_count: stimulus.visible_signal_dot_count,
+    balanced_visual_source_dot_count: stimulus.balanced_visual_source_dot_count,
+    balanced_visual_source_radius_histogram_json: JSON.stringify(
+      stimulus.balanced_visual_source_radius_histogram ?? null,
+    ),
+    balanced_visual_source_radius_area_units: (
+      stimulus.balanced_visual_source_radius_area_units
+    ),
+    balanced_visual_source_active_pixel_count: (
+      stimulus.balanced_visual_source_active_pixel_count
+    ),
+    aligned_visual_base_channel_position: (
+      stimulus.aligned_visual_base_channel_position
+    ),
+    aligned_visual_shifted_channel_position: (
+      stimulus.aligned_visual_shifted_channel_position
+    ),
+    aligned_visual_base_radius_histogram_json: JSON.stringify(
+      stimulus.aligned_visual_base_radius_histogram ?? null,
+    ),
+    aligned_visual_shifted_radius_histogram_json: JSON.stringify(
+      stimulus.aligned_visual_shifted_radius_histogram ?? null,
+    ),
+    aligned_visual_base_radius_area_units: (
+      stimulus.aligned_visual_base_radius_area_units
+    ),
+    aligned_visual_shifted_radius_area_units: (
+      stimulus.aligned_visual_shifted_radius_area_units
+    ),
+    aligned_visual_base_active_pixel_count: (
+      stimulus.aligned_visual_base_active_pixel_count
+    ),
+    aligned_visual_shifted_active_pixel_count: (
+      stimulus.aligned_visual_shifted_active_pixel_count
+    ),
+    balanced_carrier_occupancy_sha256: stimulus.balanced_carrier_occupancy_sha256,
+    canonical_carrier_occupancy_sha256: stimulus.canonical_carrier_occupancy_sha256,
+    aligned_carrier_occupancy_sha256: stimulus.aligned_carrier_occupancy_sha256,
+    canonical_target_mask_sha256: stimulus.canonical_target_mask_sha256,
+    aligned_target_mask_sha256: stimulus.aligned_target_mask_sha256,
+    aligned_visual_base_mask_sha256: stimulus.aligned_visual_base_mask_sha256,
+    aligned_visual_shifted_mask_sha256: stimulus.aligned_visual_shifted_mask_sha256,
     displayed_choice_order: currentAttempt.responseChoices.map(item => item.choice_id),
     displayed_choice_targets_json: JSON.stringify(
       currentAttempt.responseChoices.map(item => item.target_ids),
@@ -1963,9 +2122,19 @@ function resolveDifficultyMatchScoreGap(trial, stimulus) {
 }
 
 function humanCondition(condition) {
+  if (manifest?.settings?.signalMode === 'mixed-aligned') {
+    return {
+      'visual_background_audio': 'Complete identity visual + neutral carrier',
+      'visual_aligned_overlay': 'Complete identity visual + shifted visual · neutral carrier',
+      'visual_aligned_ir_audio': 'Complete identity visual + shifted identical IR',
+      'ir_audio': 'Changed source scaffold + complementary IR',
+    }[condition] || condition;
+  }
   return {
     'visual_silent': 'Visual diagnostic (silent)',
     'visual_background_audio': 'Visual diagnostic + neutral carrier audio',
+    'visual_aligned_overlay': 'Aligned visual + visual · neutral carrier',
+    'visual_aligned_ir_audio': 'Visual diagnostic + aligned full-target IR',
     'ir_audio': 'Source scaffold + IR diagnostic audio',
   }[condition] || condition;
 }
@@ -1973,6 +2142,7 @@ function humanCondition(condition) {
 function humanSignalMode(signalMode) {
   return {
     mixed: 'mixed visual vs IR · carrier-controlled',
+    'mixed-aligned': 'four-way mixed · visual and IR alignment',
     visual: 'visual baseline · silent',
     ir: 'IR only · audio diagnostic',
     paired: 'repeated same-puzzle pair · research',
@@ -1997,11 +2167,16 @@ const CSV_COLUMNS = [
   'trial_progression', 'feedback_enabled', 'total_presentation_count',
   'glyph_quota_1', 'glyph_quota_2', 'glyph_quota_3',
   'condition_count_visual_silent', 'condition_count_visual_background_audio',
-  'condition_count_ir_audio', 'condition_assignment_method',
+  'condition_count_visual_aligned_overlay',
+  'condition_count_visual_aligned_ir_audio',
+  'condition_count_ir_audio', 'mixed_condition_ratio', 'condition_assignment_method',
+  'combinatorial_verification_version', 'combinatorial_verification_passed',
+  'combinatorial_mapping_count', 'combinatorial_eligible_by_glyph_json',
+  'condition_by_glyph_count_json',
   'difficulty_model_version',
   'condition', 'pair_id', 'pair_position', 'pair_order', 'pair_pass', 'pair_lag',
   'trial_index', 'stimulus_id', 'source_ids', 'target_ids', 'mapping_ids',
-  'changed_count', 'glyph_count', 'transformation_signature',
+  'changed_count', 'mapping_class', 'choice_rule', 'glyph_count', 'transformation_signature',
   'mapping_repetition_index', 'estimated_difficulty_score',
   'difficulty_rank', 'difficulty_stratum',
   'difficulty_glyph_load', 'difficulty_diagnostic_subtlety',
@@ -2010,6 +2185,34 @@ const CSV_COLUMNS = [
   'difficulty_outcome_space_size',
   'difficulty_match_id', 'difficulty_match_position',
   'difficulty_match_score_gap', 'assigned_condition',
+  'aligned_displacement_audio_dx', 'aligned_displacement_audio_dy',
+  'aligned_displacement_audio_pixels', 'aligned_displacement_plate_pixels',
+  'aligned_target_pixel_count',
+  'canonical_target_pixel_count', 'canonical_visual_dot_count',
+  'aligned_visual_base_dot_count', 'aligned_visual_shifted_dot_count',
+  'aligned_visual_overlap_dot_count', 'alignment_equivalence_version',
+  'aligned_visual_carrier_version', 'aligned_visual_density_equivalence_version',
+  'aligned_visual_pair_axis', 'aligned_visual_pair_offset_pixels',
+  'aligned_visual_subdot_radii_json',
+  'aligned_visual_carrier_dot_count', 'aligned_visual_subdot_count',
+  'aligned_visual_carrier_radius_histogram_json',
+  'aligned_visual_carrier_occupied_pixel_count',
+  'visible_signal_dot_count', 'balanced_visual_source_dot_count',
+  'balanced_visual_source_radius_histogram_json',
+  'balanced_visual_source_radius_area_units',
+  'balanced_visual_source_active_pixel_count',
+  'aligned_visual_base_channel_position',
+  'aligned_visual_shifted_channel_position',
+  'aligned_visual_base_radius_histogram_json',
+  'aligned_visual_shifted_radius_histogram_json',
+  'aligned_visual_base_radius_area_units',
+  'aligned_visual_shifted_radius_area_units',
+  'aligned_visual_base_active_pixel_count',
+  'aligned_visual_shifted_active_pixel_count',
+  'balanced_carrier_occupancy_sha256', 'canonical_carrier_occupancy_sha256',
+  'aligned_carrier_occupancy_sha256',
+  'canonical_target_mask_sha256', 'aligned_target_mask_sha256',
+  'aligned_visual_base_mask_sha256', 'aligned_visual_shifted_mask_sha256',
   'displayed_choice_order', 'displayed_choice_targets_json',
   'target_choice_id', 'decoy_choice_id',
   'response_choice_id', 'response_target_ids', 'response_position', 'correct',
@@ -2028,4 +2231,4 @@ const CSV_COLUMNS = [
   'fullscreen_at_onset', 'device_pixel_ratio', 'timestamp',
 ];
 
-document.documentElement.dataset.advancedIshiharaVersion = 'advanced-7';
+document.documentElement.dataset.advancedIshiharaVersion = 'advanced-9';

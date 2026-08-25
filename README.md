@@ -30,6 +30,32 @@ same puzzle once in each carrier-controlled condition, counterbalances which
 condition appears first, and therefore produces `2N` presentations from `N`
 stimuli.
 
+The advanced **Four-way mixed** design is grammar-stratified and leaves the
+standard Mixed design unchanged. Its default `1:1:1:2` allocation is:
+
+- one complete single-colour identity target plus neutral carrier;
+- that identity geometry plus a one-dot-shifted complete copy in a second
+  visible colour, with neutral carrier;
+- that identity geometry plus the identical shifted binary mask delivered in
+IR audio; and
+- a changed source scaffold plus its existing complementary IR diagnostic.
+
+Thus the first three conditions contain only canonical `source→source`
+identities, while the fourth contains at least one canonical addition-only
+change. The visual+visual and visual+IR paths are generated from the same two
+binary masks. Overlap is represented by separate full subdots rather than by
+letting one layer erase the other or by dividing a dot into coloured halves.
+Every carrier location is rendered as two smaller, complete subdots on a
+seeded random diagonal. Channel B is a bijective one-cell copy of channel A,
+so the red and cyan layers have exactly the same token count, radius histogram,
+nominal area, and active raster-pixel count. Neutral carrier replaces a signal
+colour without changing this dyad texture. Thus red-only and cyan-only
+isolation each preserves the full identity without any half-dot or density
+cue, and all four conditions share the same carrier. The ratio is configurable under
+Advanced block settings. One dot is the plate's 16-pixel dot pitch, equal to
+four pixels in the 178×64 audio mask; translations are seeded left or right
+and rejected if they crop any target geometry.
+
 Each background carrier is normalized to a low fixed RMS, and that exact
 linear gain is also applied to its IR-probe counterfactual. The diagnostic's
 energy and contrast are therefore preserved; the two complete WAVs are
@@ -39,9 +65,10 @@ while the IR condition receives the diagnostic plus that carrier. The plate
 remains static; only the audio algorithm sweeps.
 
 After 3 × 1.05-second sweeps and two 250 ms inter-sweep intervals (3.65 seconds
-total), a 220 ms mask appears. The participant then chooses among four complete,
-plausible interpretations. One is the target, one is the fully unchanged source
-decoy, and two are close alternatives from the same source families.
+total), a 220 ms mask appears. The participant then chooses among four unique
+complete interpretations. Changed trials retain the target and unchanged-source
+decoy. Identity trials contain the identity target once and use nearby canonical
+geometry foils when a small family cannot supply three distinct alternatives.
 
 Feedback is explicitly configurable and defaults to on. Enabling it for
 held-out sources warns that doing so exposes test mappings; enabling it for
@@ -56,7 +83,7 @@ experimental blocks:
 - training (13/19 source families, exactly 2/3 of family mappings) or held-out
   testing (6/19 families, exactly 1/3 of mappings);
 - default Mixed visual-versus-IR delivery, standalone silent Visual or IR-only
-  delivery, and the advanced Repeated-pair design;
+  delivery, the advanced Four-way mixed design, and Repeated-pair design;
 - 4--96 stimulus instances (30 by default), presented once in Mixed and standalone modes, with
   Repeated pair producing twice as many presentations;
 - **Growing practice** from simpler to harder by default, or **Shuffled**
@@ -64,7 +91,8 @@ experimental blocks:
 - manual feedback (on by default), keyboard or pointer response, and compact,
   expanded, or physically calibrated presentation; and
 - automatic balanced one-/two-/three-glyph composition, or a forced glyph
-  count, under **Advanced block settings**.
+  count, plus a configurable Four-way mixed condition ratio, under **Advanced
+  block settings**.
 
 The requested run code deterministically creates the first candidate. If that
 candidate exceeds the participant's repeat ceiling, the history guard redraws
@@ -74,6 +102,11 @@ code and redraw count. The automatic glyph policy divides base stimuli as
 evenly as possible across one, two, and three glyphs; a seeded remainder rule
 makes the preview and generated manifest agree for counts not divisible by
 three.
+
+For Four-way mixed, exact largest-remainder apportionment fixes both the
+condition totals and the one-/two-/three-glyph totals. With 30 plates at
+`1:1:1:2`, each glyph length receives `2/2/2/4` plates. The manifest re-audits
+every mapping, choice, split, margin, and mapping class before assets are used.
 
 Registered participant names appear in a local selection bar, and a new name
 can be added without losing earlier participant-specific history. The selected
@@ -175,6 +208,12 @@ The complete grammar contains 27 geometry classes, 19 transformable sources,
 raw ordered one- through three-position space contains 950,894 sequences;
 930,455 contain at least one change. The session engine samples lazily rather
 than generating that catalog in advance.
+
+Within Four-way mixed, the selected split's complete mapping universe is used:
+training has `60^k` and held-out testing has `30^k` eligible ordered sequences
+for `k` glyphs. These partition exactly into `13^k` identities plus
+`60^k−13^k` changed sequences in training, and `6^k` identities plus
+`30^k−6^k` changed sequences in testing.
 
 See [`advanced_ishihara/README.md`](advanced_ishihara/README.md) for the exact
 source tables and grammar mathematics.

@@ -3,9 +3,39 @@ set -euo pipefail
 
 repo_dir="${0:A:h:h}"
 template_dir="${repo_dir}/tools/advanced_app_template"
-output_app="${1:-${HOME}/Desktop/Advanced IR Ishihara.app}"
+app_name="${ADVANCED_ISHIHARA_APP_NAME:-Advanced IR Ishihara}"
+bundle_identifier="${ADVANCED_ISHIHARA_BUNDLE_ID:-com.sukanthoriginal.ir-ishihara-advanced}"
+server_port="${ADVANCED_ISHIHARA_PORT:-8137}"
+data_name="${ADVANCED_ISHIHARA_DATA_NAME:-${app_name}}"
+mirror_data_dir="${ADVANCED_ISHIHARA_MIRROR_DATA_DIR:-${HOME}/Dev/Lossfunk/ir-results/ishihara-advanced}"
+log_stem="${ADVANCED_ISHIHARA_LOG_STEM:-advanced_ishihara}"
+output_app="${1:-${HOME}/Desktop/${app_name}.app}"
 python_bin="${ADVANCED_ISHIHARA_PYTHON:-$(command -v python3)}"
 node_bin="${NODE_BIN:-$(command -v node)}"
+runtime_source_digest="$(
+  LC_ALL=C LANG=C /usr/bin/shasum -a 256 \
+    "$repo_dir/shared/plate.py" \
+    "$repo_dir/shared/experiment_server.py" \
+    "$repo_dir/advanced_ishihara/generate_session.py" \
+  | LC_ALL=C LANG=C /usr/bin/shasum -a 256 \
+  | /usr/bin/awk '{print $1}'
+)"
+runtime_id="${bundle_identifier}.${runtime_source_digest}"
+
+if [[ "$server_port" != <1-65535> ]]; then
+  print -u2 "ADVANCED_ISHIHARA_PORT must be an integer from 1 to 65535."
+  exit 2
+fi
+for replacement in \
+  "$python_bin" "$app_name" "$data_name" "$mirror_data_dir" "$log_stem" \
+  "$bundle_identifier" "$runtime_id"; do
+  case "$replacement" in
+    *'|'*|*'&'*|*'\\'*)
+      print -u2 "Launcher settings cannot contain |, &, or backslash: ${replacement}"
+      exit 2
+      ;;
+  esac
+done
 
 if [[ -e "$output_app" ]]; then
   print -u2 "Refusing to overwrite existing path: ${output_app}"
@@ -39,7 +69,17 @@ trap cleanup_incomplete_output EXIT
 
 /bin/mkdir -p "$output_app/Contents/MacOS" "$output_app/Contents/Resources/runtime"
 /bin/cp "$template_dir/Info.plist" "$output_app/Contents/Info.plist"
-/usr/bin/sed "s|__PYTHON_BIN__|${python_bin}|g" \
+/usr/bin/plutil -replace CFBundleDisplayName -string "$app_name" "$output_app/Contents/Info.plist"
+/usr/bin/plutil -replace CFBundleName -string "$app_name" "$output_app/Contents/Info.plist"
+/usr/bin/plutil -replace CFBundleIdentifier -string "$bundle_identifier" "$output_app/Contents/Info.plist"
+/usr/bin/sed \
+  -e "s|__PYTHON_BIN__|${python_bin}|g" \
+  -e "s|__APP_NAME__|${app_name}|g" \
+  -e "s|__SERVER_PORT__|${server_port}|g" \
+  -e "s|__RUNTIME_ID__|${runtime_id}|g" \
+  -e "s|__DATA_NAME__|${data_name}|g" \
+  -e "s|__MIRROR_DATA_DIR__|${mirror_data_dir}|g" \
+  -e "s|__LOG_STEM__|${log_stem}|g" \
   "$template_dir/Advanced-Ishihara-Launcher" \
   > "$output_app/Contents/MacOS/Advanced-Ishihara-Launcher"
 /bin/chmod +x "$output_app/Contents/MacOS/Advanced-Ishihara-Launcher"
@@ -71,4 +111,4 @@ fi
 /usr/bin/codesign --force --deep --sign - "$output_app"
 /usr/bin/codesign --verify --deep --strict "$output_app"
 build_complete=1
-print "Built Advanced IR Ishihara launcher: ${output_app}"
+print "Built ${app_name} launcher: ${output_app}"

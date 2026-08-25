@@ -12,7 +12,11 @@ import sys
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-from advanced_ishihara.generate_session import load_grammar, prepare_session
+from advanced_ishihara.generate_session import (
+    RENDER_VERSION,
+    load_grammar,
+    prepare_session,
+)
 from shared.local_state import (
     ActiveSessionLeaseError,
     LocalParticipantState,
@@ -38,6 +42,10 @@ def make_handler(
     repo_root = repo_root.resolve()
     session_root = session_dir.resolve()
     mirror_root = mirror_data_dir.resolve() if mirror_data_dir else None
+    runtime_id = os.environ.get(
+        "ADVANCED_ISHIHARA_RUNTIME_ID",
+        f"source:{repo_root}",
+    )
     local_state = LocalParticipantState(test_data_dir, test_data_dir, repo_root)
 
     class Handler(http.server.SimpleHTTPRequestHandler):
@@ -48,7 +56,7 @@ def make_handler(
             path = urlparse(self.path).path
             if (
                 path.endswith((".html", ".js", ".mjs", "manifest.json"))
-                or path in {"/", "/advanced/"}
+                or path in {"/", "/advanced/", "/api/runtime-identity"}
             ):
                 self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
                 self.send_header("Pragma", "no-cache")
@@ -60,6 +68,12 @@ def make_handler(
                 self.send_error(403, "Local host required")
                 return
             path = urlparse(self.path).path
+            if path == "/api/runtime-identity":
+                self._write_json(200, {
+                    "runtime_id": runtime_id,
+                    "render_version": RENDER_VERSION,
+                })
+                return
             if path == "/api/local-state":
                 self._local_state()
                 return
