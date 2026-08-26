@@ -41,6 +41,7 @@ from shared.plate import (
     PLATE_HEIGHT,
     PLATE_WIDTH,
     SOURCE_COLOURS,
+    difference_mask,
     draw_geometry_mask,
     mask_digest,
     render_trial_images,
@@ -62,8 +63,8 @@ from shared.soundscape import (
     wav_rms_int16,
 )
 
-SCHEMA_VERSION = 8
-RENDER_VERSION = 7
+SCHEMA_VERSION = 11
+RENDER_VERSION = 9
 AUDIO_RENDER_VERSION = 2
 DIFFICULTY_MODEL_VERSION = "estimated-v1"
 DIFFICULTY_COMPONENT_NAMES = (
@@ -87,8 +88,20 @@ ALIGNED_MIXED_CONDITIONS = (
     "visual_aligned_ir_audio",
     "ir_audio",
 )
-ALIGNED_IDENTITY_CONDITIONS = ALIGNED_MIXED_CONDITIONS[:3]
-ALIGNED_COMPLEMENTARY_CONDITION = ALIGNED_MIXED_CONDITIONS[3]
+ALIGNED_IDENTITY_CONDITIONS = (
+    "visual_aligned_overlay",
+    "visual_aligned_ir_audio",
+)
+ALIGNED_COMPLEMENTARY_CONDITIONS = (
+    "visual_background_audio",
+    "ir_audio",
+)
+VISUAL_ALIGNED_SILENT_CONDITION = "visual_aligned_silent"
+VISUAL_COMPLEMENTARY_SILENT_CONDITION = "visual_complementary_silent"
+VISUAL_COMPOSITE_CONDITIONS = (
+    VISUAL_COMPLEMENTARY_SILENT_CONDITION,
+    VISUAL_ALIGNED_SILENT_CONDITION,
+)
 DEFAULT_ALIGNED_MIXED_RATIO = (1, 1, 1, 2)
 PROGRESSION_MODES = ("growing", "glyph-growing", "mixed")
 
@@ -150,9 +163,12 @@ def normalize_settings(settings: dict) -> dict:
             "visual-only": "visual",
             "mixed": "paired",
         }.get(legacy_mode)
-    if signal_mode not in {"visual", "ir", "mixed", "mixed-aligned", "paired"}:
+    if signal_mode not in {
+        "visual", "visual-aligned", "ir", "mixed", "mixed-aligned", "paired",
+    }:
         raise ValueError(
-            "signalMode must be visual, ir, mixed, mixed-aligned, or paired"
+            "signalMode must be visual, visual-aligned, ir, mixed, "
+            "mixed-aligned, or paired"
         )
 
     base_count_value = settings.get(
@@ -552,11 +568,21 @@ def prepare_session(
                 stem,
                 derive_seed(normalized["seed"], f"render-v1:{index}"),
                 include_aligned_assets=(
-                    normalized["signalMode"] == "mixed-aligned"
-                    and assigned_condition in ALIGNED_IDENTITY_CONDITIONS
+                    normalized["signalMode"] == "visual-aligned"
+                    or (
+                        normalized["signalMode"] == "mixed-aligned"
+                        and assigned_condition in ALIGNED_IDENTITY_CONDITIONS
+                    )
                 ),
                 include_balanced_carrier_assets=(
                     normalized["signalMode"] == "mixed-aligned"
+                ),
+                include_visual_complementary_asset=(
+                    normalized["signalMode"] == "visual-aligned"
+                    or (
+                        normalized["signalMode"] == "mixed-aligned"
+                        and assigned_condition == "visual_background_audio"
+                    )
                 ),
             )
             target_choice = next(
@@ -626,6 +652,14 @@ def prepare_session(
                 "difficulty_components": difficulty["components"],
                 "difficulty_model_version": DIFFICULTY_MODEL_VERSION,
                 "difficulty_inputs": difficulty["inputs"],
+                **(
+                    {
+                        "visible_signal_dot_count": assets[
+                            "aligned_visual_base_dot_count"
+                        ]
+                    }
+                    if normalized["signalMode"] == "visual-aligned" else {}
+                ),
                 **{key: value for key, value in assets.items() if key != "choices"},
             })
 
@@ -679,6 +713,21 @@ def prepare_session(
                     stimuli, ALIGNED_MIXED_CONDITIONS,
                 )
             )
+        elif normalized["signalMode"] == "visual-aligned":
+            assign_mixed_conditions(
+                stimuli,
+                normalized["seed"],
+                conditions=VISUAL_COMPOSITE_CONDITIONS,
+                match_prefix="visual-composite-match",
+            )
+            mixed_balance = summarize_mixed_condition_balance(
+                stimuli, VISUAL_COMPOSITE_CONDITIONS,
+            )
+            mixed_balance["visible_signal_density_balance"] = (
+                summarize_visible_signal_density(
+                    stimuli, VISUAL_COMPOSITE_CONDITIONS,
+                )
+            )
         trials = make_schedule(stimuli, normalized, schedule_rng)
         difficulty_summary = summarize_difficulty(stimuli)
         manifest = {
@@ -698,31 +747,36 @@ def prepare_session(
             "condition_distribution": {
                 condition: sum(trial["condition"] == condition for trial in trials)
                 for condition in (
-                    "visual_silent", "visual_background_audio",
+                    "visual_silent", *VISUAL_COMPOSITE_CONDITIONS,
+                    "visual_background_audio",
                     "visual_aligned_overlay", "visual_aligned_ir_audio",
                     "ir_audio",
                 )
                 if any(trial["condition"] == condition for trial in trials)
             },
             "comparison_design": (
-                "grammar-stratified-identity-alignment-vs-changed-complement"
+                "grammar-stratified-aligned-identities-vs-visual-and-ir-complements"
                 if normalized["signalMode"] == "mixed-aligned"
                 else "distinct-stimulus-carrier-controlled-between-condition"
                 if normalized["signalMode"] == "mixed"
                 else "within-stimulus-repeated"
                 if normalized["signalMode"] == "paired"
+                else "distinct-stimulus-silent-aligned-visual-control"
+                if normalized["signalMode"] == "visual-aligned"
                 else "single-condition"
             ),
             "stimuli_repeated_across_conditions": normalized["signalMode"] == "paired",
             "condition_assignment": (
                 {
                     "method": (
-                        "exact-condition-glyph-density-apportionment-v3"
+                        "exact-condition-glyph-density-apportionment-v4"
                         if normalized["signalMode"] == "mixed-aligned"
                         else "provisional-structural-matching-v1"
                     ),
                     "matching_priority": (
                         "exact condition and glyph margins; identity/change grammar class"
+                        if normalized["signalMode"] == "mixed-aligned"
+                        else "glyph count, difficulty stratum, changed count, score"
                     ),
                     **(
                         {
@@ -738,12 +792,19 @@ def prepare_session(
                                 "optimized for stratum balance"
                             ),
                             "odd_remainder": (
+                                "visual_complementary_silent when seed is even; "
+                                "visual_aligned_silent when seed is odd"
+                                if normalized["signalMode"] == "visual-aligned"
+                                else
                                 "visual_background_audio when seed is even; "
                                 "ir_audio when seed is odd"
                             ),
                         }
                     ),
                     "audio_matching": (
+                        "not applicable; both visual controls are silent"
+                        if normalized["signalMode"] == "visual-aligned"
+                        else
                         "carrier-referenced shared gain; composite total RMS not equalized"
                     ),
                     **mixed_balance,
@@ -948,8 +1009,9 @@ def select_mixed_aligned_trials(
 ) -> list[dict]:
     """Select identity controls and changed complements from one grammar.
 
-    The first three conditions consume only identity combinations. The fourth
-    consumes only combinations containing at least one valid grammar change.
+    The aligned visual and aligned IR conditions consume identity combinations.
+    The visual-complementary and IR-complementary conditions consume only
+    combinations containing at least one valid grammar change.
     Selection is without replacement until the relevant finite catalog is
     exhausted, after which repetition is explicit in ``mappingRepetitionIndex``.
     """
@@ -1096,7 +1158,7 @@ def _balance_identity_signal_load(
 ) -> None:
     """Assign identity labels while preserving margins and balancing mask load.
 
-    The chosen identity combinations remain unchanged. Only their three
+    The chosen identity combinations remain unchanged. Only their two
     identity-condition labels are reassigned within glyph count. A largest-first
     constrained pass is followed by improving pair swaps, so no legal
     same-glyph swap can further reduce the per-condition raster-load spread.
@@ -1405,7 +1467,7 @@ def verify_mixed_aligned_specifications(
     }
     return {
         "verified": True,
-        "version": "split-local-identity-change-density-laws-v2",
+        "version": "split-local-identity-change-density-laws-v3",
         "split": split,
         "source_family_count": identity_count,
         "mapping_count": mapping_count,
@@ -1420,13 +1482,24 @@ def verify_mixed_aligned_specifications(
             observed_conditions[condition]
             for condition in ALIGNED_IDENTITY_CONDITIONS
         ),
-        "changed_condition_count": observed_conditions[
-            ALIGNED_COMPLEMENTARY_CONDITION
-        ],
+        "changed_condition_count": sum(
+            observed_conditions[condition]
+            for condition in ALIGNED_COMPLEMENTARY_CONDITIONS
+        ),
+        "condition_mapping_classes": {
+            condition: (
+                "identity"
+                if condition in ALIGNED_IDENTITY_CONDITIONS else "changed"
+            )
+            for condition in ALIGNED_MIXED_CONDITIONS
+        },
         "identity_density_balance": identity_density_balance,
         "laws": {
             "identity": "source_id == target_id at every position",
             "changed": "at least one canonical addition-only mapping",
+            "visual_complementary": (
+                "RGB source plus yellow diagnostic additions equals target"
+            ),
             "total": "mapping_count ** glyph_count",
             "split": "every source family belongs to the selected split",
             "identity_density": (
@@ -1557,8 +1630,16 @@ def summarize_difficulty(stimuli: list[dict]) -> dict:
     }
 
 
-def assign_mixed_conditions(stimuli: list[dict], seed: int) -> None:
+def assign_mixed_conditions(
+    stimuli: list[dict],
+    seed: int,
+    conditions: tuple[str, str] = ("visual_background_audio", "ir_audio"),
+    match_prefix: str = "mixed-match",
+) -> None:
     """Match distinct puzzles structurally, then assign opposite conditions."""
+    if len(set(conditions)) != 2 or not all(conditions):
+        raise ValueError("mixed assignment requires two distinct condition names")
+    first_condition, second_condition = conditions
     stratum_order = {"easy": 0, "moderate": 1, "hard": 2}
     by_glyph_count: dict[int, list[dict]] = {}
     for stimulus in stimuli:
@@ -1642,9 +1723,7 @@ def assign_mixed_conditions(stimuli: list[dict], seed: int) -> None:
             or pair[0].get("difficulty_stratum") != pair[1].get("difficulty_stratum")
         )
     ]
-    remainder_condition = (
-        "visual_background_audio" if seed % 2 == 0 else "ir_audio"
-    )
+    remainder_condition = first_condition if seed % 2 == 0 else second_condition
 
     # Only structurally cross-group pairs affect per-glyph or per-stratum
     # balance. Exhaust their small orientation space and retain the seeded
@@ -1660,12 +1739,12 @@ def assign_mixed_conditions(stimuli: list[dict], seed: int) -> None:
         ):
             orientations[pair_index] = visual_first
         assigned = []
-        for pair_index, visual_first in enumerate(orientations):
-            conditions = (
-                ("visual_background_audio", "ir_audio")
-                if visual_first else ("ir_audio", "visual_background_audio")
+        for pair_index, first_condition_first in enumerate(orientations):
+            pair_conditions = (
+                (first_condition, second_condition)
+                if first_condition_first else (second_condition, first_condition)
             )
-            assigned.extend(zip(matched_pairs[pair_index], conditions))
+            assigned.extend(zip(matched_pairs[pair_index], pair_conditions))
         if unmatched_remainder is not None:
             assigned.append((unmatched_remainder, remainder_condition))
         stratum_differences = []
@@ -1676,8 +1755,8 @@ def assign_mixed_conditions(stimuli: list[dict], seed: int) -> None:
                 if stimulus["difficulty_stratum"] == stratum
             ]
             stratum_differences.append(abs(
-                stratum_conditions.count("visual_background_audio")
-                - stratum_conditions.count("ir_audio")
+                stratum_conditions.count(first_condition)
+                - stratum_conditions.count(second_condition)
             ))
         glyph_differences = []
         for glyph_count in sorted(by_glyph_count):
@@ -1687,22 +1766,22 @@ def assign_mixed_conditions(stimuli: list[dict], seed: int) -> None:
                 if (len(stimulus.get("source_ids", ())) or 1) == glyph_count
             ]
             glyph_differences.append(abs(
-                glyph_conditions.count("visual_background_audio")
-                - glyph_conditions.count("ir_audio")
+                glyph_conditions.count(first_condition)
+                - glyph_conditions.count(second_condition)
             ))
-        visual_scores = [
+        first_scores = [
             stimulus.get("estimated_difficulty_score", 0)
             for stimulus, condition in assigned
-            if condition == "visual_background_audio"
+            if condition == first_condition
         ]
-        ir_scores = [
+        second_scores = [
             stimulus.get("estimated_difficulty_score", 0)
             for stimulus, condition in assigned
-            if condition == "ir_audio"
+            if condition == second_condition
         ]
         score_mean_gap = abs(
-            sum(visual_scores) / len(visual_scores)
-            - sum(ir_scores) / len(ir_scores)
+            sum(first_scores) / len(first_scores)
+            - sum(second_scores) / len(second_scores)
         )
         objective = (
             max(glyph_differences, default=0),
@@ -1722,18 +1801,18 @@ def assign_mixed_conditions(stimuli: list[dict], seed: int) -> None:
             best_orientations = orientations
 
     for pair_index, (first, second) in enumerate(matched_pairs):
-        visual_first = best_orientations[pair_index]
-        conditions = (
-            ("visual_background_audio", "ir_audio")
-            if visual_first else ("ir_audio", "visual_background_audio")
+        first_condition_first = best_orientations[pair_index]
+        pair_conditions = (
+            (first_condition, second_condition)
+            if first_condition_first else (second_condition, first_condition)
         )
-        match_id = f"mixed-match-{pair_index + 1:03d}"
+        match_id = f"{match_prefix}-{pair_index + 1:03d}"
         score_gap = round(abs(
             first.get("estimated_difficulty_score", 0)
             - second.get("estimated_difficulty_score", 0)
         ), 4)
         for position, (stimulus, condition) in enumerate(
-            zip((first, second), conditions), start=1,
+            zip((first, second), pair_conditions), start=1,
         ):
             stimulus["assigned_condition"] = condition
             stimulus["difficulty_match_id"] = match_id
@@ -1940,8 +2019,10 @@ def generate_aligned_mixed_audio_assets(
         stimulus.update(audio_assets)
 
 
-def summarize_mixed_condition_balance(stimuli: list[dict]) -> dict:
-    conditions = ("visual_background_audio", "ir_audio")
+def summarize_mixed_condition_balance(
+    stimuli: list[dict],
+    conditions: tuple[str, str] = ("visual_background_audio", "ir_audio"),
+) -> dict:
 
     def counts(items: list[dict]) -> dict[str, int]:
         return {
@@ -2180,8 +2261,26 @@ def make_schedule(stimuli: list[dict], settings: dict, rng: random.Random) -> li
             "progression must be growing, glyph-growing, or mixed"
         )
 
+    if signal_mode == "visual-aligned":
+        if any("assigned_condition" not in stimulus for stimulus in stimuli):
+            raise ValueError(
+                "visual-aligned conditions must be structurally assigned"
+            )
+        return [
+            trial_record(
+                index,
+                stimulus,
+                stimulus["assigned_condition"],
+                None,
+                response_choice_ids=_shuffled_choice_ids(stimulus, rng),
+            )
+            for index, stimulus in enumerate(ordered, start=1)
+        ]
     if signal_mode in {"visual", "ir"}:
-        condition = "visual_silent" if signal_mode == "visual" else "ir_audio"
+        condition = {
+            "visual": "visual_silent",
+            "ir": "ir_audio",
+        }[signal_mode]
         return [
             trial_record(
                 index,
@@ -2222,7 +2321,8 @@ def make_schedule(stimuli: list[dict], settings: dict, rng: random.Random) -> li
         ]
     if signal_mode != "paired":
         raise ValueError(
-            "signalMode must be visual, ir, mixed, mixed-aligned, or paired"
+            "signalMode must be visual, visual-aligned, ir, mixed, "
+            "mixed-aligned, or paired"
         )
 
     first_conditions = [
@@ -2385,7 +2485,8 @@ def trial_record(
         audio_content = "diagnostic-ir-probe-plus-background-carrier"
     elif condition == "visual_background_audio":
         plate = stimulus.get(
-            "canonical_visual_plate_png", stimulus["visual_plate_png"],
+            "visual_complementary_plate_png",
+            stimulus.get("canonical_visual_plate_png", stimulus["visual_plate_png"]),
         )
         wav = stimulus["background_wav"]
         audio_content = "background-only-carrier"
@@ -2397,6 +2498,14 @@ def trial_record(
         plate = stimulus["canonical_visual_plate_png"]
         wav = stimulus["aligned_target_wav"]
         audio_content = "shifted-full-target-ir-plus-background-carrier"
+    elif condition == VISUAL_COMPOSITE_CONDITIONS[0]:
+        plate = stimulus["visual_complementary_plate_png"]
+        wav = None
+        audio_content = "none"
+    elif condition == VISUAL_ALIGNED_SILENT_CONDITION:
+        plate = stimulus["visual_aligned_plate_png"]
+        wav = None
+        audio_content = "none"
     elif condition == "visual_silent":
         plate = stimulus["visual_plate_png"]
         wav = None
@@ -2519,6 +2628,28 @@ def manifest_is_complete(manifest: dict, root: Path) -> bool:
             ) != expected_signal_density
         ):
             return False
+    if signal_mode == "visual-aligned":
+        aligned_stimuli = manifest.get("stimuli", [])
+        assignment = manifest.get("condition_assignment")
+        if not aligned_stimuli or not isinstance(assignment, dict):
+            return False
+        expected_balance = summarize_mixed_condition_balance(
+            aligned_stimuli, VISUAL_COMPOSITE_CONDITIONS,
+        )
+        expected_density = summarize_visible_signal_density(
+            aligned_stimuli, VISUAL_COMPOSITE_CONDITIONS,
+        )
+        if any(
+            assignment.get(key) != value
+            for key, value in expected_balance.items()
+        ):
+            return False
+        if assignment.get("visible_signal_density_balance") != expected_density:
+            return False
+        if assignment.get("condition_counts") != manifest.get(
+            "condition_distribution"
+        ):
+            return False
     for stimulus in manifest.get("stimuli", []):
         if (
             signal_mode == "mixed"
@@ -2531,7 +2662,22 @@ def manifest_is_complete(manifest: dict, root: Path) -> bool:
             and stimulus.get("assigned_condition") not in ALIGNED_MIXED_CONDITIONS
         ):
             return False
-        if signal_mode == "mixed-aligned":
+        if (
+            signal_mode == "visual-aligned"
+            and stimulus.get("assigned_condition") not in VISUAL_COMPOSITE_CONDITIONS
+        ):
+            return False
+        aligned_visual_stimulus = (
+            signal_mode == "visual-aligned"
+            or signal_mode == "mixed-aligned"
+            and stimulus.get("assigned_condition") in ALIGNED_IDENTITY_CONDITIONS
+        )
+        visual_complementary_stimulus = (
+            signal_mode == "visual-aligned"
+            or signal_mode == "mixed-aligned"
+            and stimulus.get("assigned_condition") == "visual_background_audio"
+        )
+        if signal_mode in {"mixed-aligned", "visual-aligned"}:
             condition = stimulus.get("assigned_condition")
             source_ids = stimulus.get("source_ids", [])
             expected_base_colours = [
@@ -2545,7 +2691,10 @@ def manifest_is_complete(manifest: dict, root: Path) -> bool:
                 != expected_base_colours
             ):
                 return False
-            identity_condition = condition in ALIGNED_IDENTITY_CONDITIONS
+            identity_condition = (
+                signal_mode == "mixed-aligned"
+                and condition in ALIGNED_IDENTITY_CONDITIONS
+            )
             if identity_condition:
                 if (
                     stimulus.get("mapping_class") != "identity"
@@ -2554,7 +2703,14 @@ def manifest_is_complete(manifest: dict, root: Path) -> bool:
                     or stimulus.get("decoy_choice_id") is not None
                 ):
                     return False
-            elif (
+            elif signal_mode == "mixed-aligned" and (
+                stimulus.get("mapping_class") != "changed"
+                or not isinstance(stimulus.get("changed_count"), int)
+                or stimulus.get("changed_count") < 1
+                or stimulus.get("source_ids") == stimulus.get("target_ids")
+            ):
+                return False
+            if signal_mode == "visual-aligned" and (
                 stimulus.get("mapping_class") != "changed"
                 or not isinstance(stimulus.get("changed_count"), int)
                 or stimulus.get("changed_count") < 1
@@ -2575,8 +2731,13 @@ def manifest_is_complete(manifest: dict, root: Path) -> bool:
         ):
             if not (root / stimulus[key]).is_file():
                 return False
-        if signal_mode == "mixed-aligned":
+        if signal_mode in {"mixed-aligned", "visual-aligned"}:
             balanced_plate = stimulus.get("balanced_carrier_ir_plate_png")
+            expected_visible_signal_dot_count = (
+                stimulus.get("aligned_visual_base_dot_count")
+                if signal_mode == "visual-aligned"
+                else stimulus.get("balanced_visual_source_dot_count")
+            )
             carrier_histogram = stimulus.get(
                 "aligned_visual_carrier_radius_histogram"
             )
@@ -2619,7 +2780,7 @@ def manifest_is_complete(manifest: dict, root: Path) -> bool:
                 or not stimulus.get("balanced_carrier_occupancy_sha256")
                 or stimulus.get("balanced_visual_source_dot_count", 0) <= 0
                 or stimulus.get("visible_signal_dot_count")
-                != stimulus.get("balanced_visual_source_dot_count")
+                != expected_visible_signal_dot_count
                 or not isinstance(
                     stimulus.get("balanced_visual_source_radius_histogram"), dict,
                 )
@@ -2627,10 +2788,62 @@ def manifest_is_complete(manifest: dict, root: Path) -> bool:
                 or stimulus.get("balanced_visual_source_active_pixel_count", 0) <= 0
             ):
                 return False
-        if (
-            signal_mode == "mixed-aligned"
-            and stimulus.get("assigned_condition") in ALIGNED_IDENTITY_CONDITIONS
-        ):
+        if visual_complementary_stimulus:
+            complementary_plate = stimulus.get(
+                "visual_complementary_plate_png"
+            )
+            complementary_source_histogram = stimulus.get(
+                "visual_complementary_source_radius_histogram"
+            )
+            complementary_addition_histogram = stimulus.get(
+                "visual_complementary_addition_radius_histogram"
+            )
+            if (
+                not complementary_plate
+                or not (root / complementary_plate).is_file()
+                or stimulus.get("visual_complementary_equivalence_version")
+                != "source-plus-diagnostic-equals-target-v1"
+                or stimulus.get("visual_complementary_addition_colour")
+                != list(ALIGNED_VISUAL_COPY_COLOUR)
+                or stimulus.get("visual_complementary_carrier_occupancy_sha256")
+                != stimulus.get("balanced_carrier_occupancy_sha256")
+                or (
+                    stimulus.get("canonical_carrier_occupancy_sha256") is not None
+                    and stimulus.get(
+                        "visual_complementary_carrier_occupancy_sha256"
+                    ) != stimulus.get("canonical_carrier_occupancy_sha256")
+                )
+                or stimulus.get("visual_complementary_source_dot_count")
+                != stimulus.get("balanced_visual_source_dot_count")
+                or stimulus.get("visual_complementary_source_active_pixel_count")
+                != stimulus.get("balanced_visual_source_active_pixel_count")
+                or complementary_source_histogram
+                != stimulus.get("balanced_visual_source_radius_histogram")
+                or not isinstance(complementary_addition_histogram, dict)
+                or sum(complementary_addition_histogram.values())
+                != stimulus.get("visual_complementary_addition_dot_count")
+                or stimulus.get("visual_complementary_addition_dot_count", 0) <= 0
+                or stimulus.get(
+                    "visual_complementary_addition_active_pixel_count", 0,
+                ) <= 0
+            ):
+                return False
+            try:
+                source_mask, diagnostic_mask, target_mask = difference_mask(
+                    stimulus["source_ids"], stimulus["target_ids"],
+                )
+            except (KeyError, TypeError, ValueError):
+                return False
+            if (
+                stimulus.get("visual_complementary_source_mask_sha256")
+                != mask_digest(source_mask)
+                or stimulus.get("visual_complementary_addition_mask_sha256")
+                != mask_digest(diagnostic_mask)
+                or stimulus.get("visual_complementary_target_mask_sha256")
+                != mask_digest(target_mask)
+            ):
+                return False
+        if aligned_visual_stimulus:
             for key in (
                 "canonical_visual_plate_png", "visual_aligned_plate_png",
                 "aligned_input_png",
@@ -2767,7 +2980,7 @@ def manifest_is_complete(manifest: dict, root: Path) -> bool:
         stimulus.get("stimulus_id"): stimulus
         for stimulus in manifest.get("stimuli", [])
     }
-    if signal_mode in {"mixed", "mixed-aligned"}:
+    if signal_mode in {"mixed", "mixed-aligned", "visual-aligned"}:
         mixed_trial_ids = [
             trial.get("stimulus_id") for trial in manifest.get("trials", [])
         ]
@@ -2783,9 +2996,18 @@ def manifest_is_complete(manifest: dict, root: Path) -> bool:
         if condition == "visual_silent":
             expected_plate = stimulus.get("visual_plate_png")
             expected_wav = None
+        elif condition == VISUAL_COMPOSITE_CONDITIONS[0]:
+            expected_plate = stimulus.get("visual_complementary_plate_png")
+            expected_wav = None
+        elif condition == VISUAL_ALIGNED_SILENT_CONDITION:
+            expected_plate = stimulus.get("visual_aligned_plate_png")
+            expected_wav = None
         elif condition == "visual_background_audio":
             expected_plate = stimulus.get(
-                "canonical_visual_plate_png", stimulus.get("visual_plate_png"),
+                "visual_complementary_plate_png",
+                stimulus.get(
+                    "canonical_visual_plate_png", stimulus.get("visual_plate_png"),
+                ),
             )
             expected_wav = stimulus.get("background_wav")
         elif condition == "visual_aligned_overlay":
@@ -2993,7 +3215,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--split", choices=("train", "test"), default="train")
     parser.add_argument(
         "--signal", "--signal-mode", dest="signal_mode",
-        choices=("visual", "ir", "mixed", "mixed-aligned", "paired"),
+        choices=(
+            "visual", "visual-aligned", "ir", "mixed", "mixed-aligned", "paired",
+        ),
         default="mixed",
     )
     parser.add_argument("--stimuli", type=int, default=30)

@@ -71,6 +71,10 @@ class AdvancedWebStaticTests(unittest.TestCase):
             '<option value="mixed-aligned">Four-way mixed — visual and IR alignment</option>',
             self.html,
         )
+        self.assertIn(
+            '<option value="visual-aligned">Visual composites — complementary vs aligned (silent)</option>',
+            self.html,
+        )
         self.assertLess(
             self.html.index('<option value="mixed" selected>'),
             self.html.index('<option value="visual">'),
@@ -96,6 +100,14 @@ class AdvancedWebStaticTests(unittest.TestCase):
         self.assertIn('id="presentation"', self.html)
         self.assertIn("'visual_silent': 'Visual diagnostic (silent)'", self.javascript)
         self.assertIn(
+            "'visual_aligned_silent': 'Visual aligned + composite (silent)'",
+            self.javascript,
+        )
+        self.assertIn(
+            "'visual_complementary_silent': 'Complementary visual composite (silent)'",
+            self.javascript,
+        )
+        self.assertIn(
             "'visual_background_audio': 'Visual diagnostic + neutral carrier audio'",
             self.javascript,
         )
@@ -111,9 +123,12 @@ class AdvancedWebStaticTests(unittest.TestCase):
         self.assertIn("manifest.inter_sweep_interval_ms", self.javascript)
         self.assertIn("'visual_aligned_overlay'", self.javascript)
         self.assertIn("'visual_aligned_ir_audio'", self.javascript)
-        self.assertIn("Complete identity visual + shifted visual", self.javascript)
+        self.assertIn("Visual aligned + composite · neutral carrier", self.javascript)
         self.assertIn("Complete identity visual + shifted identical IR", self.javascript)
-        self.assertIn("changed mappings to complementary IR", self.html)
+        self.assertIn(
+            "Four-way mixed includes that same yellow missing-stroke composite",
+            self.html,
+        )
 
     def test_preview_advanced_controls_and_manual_feedback_are_wired(self):
         self.assertIn("Automatic — balance 1, 2, and 3 glyphs", self.html)
@@ -122,11 +137,7 @@ class AdvancedWebStaticTests(unittest.TestCase):
         self.assertIn('<option value="3">Only 3 glyphs</option>', self.html)
         self.assertIn("Reproducible run code", self.html)
         self.assertIn('id="mixed-condition-ratio"', self.html)
-        self.assertIn(
-            "Identity and complementary bases share red / red+green / RGB glyph colours; "
-            "aligned visual copies are yellow.",
-            self.html,
-        )
+        self.assertIn("RGB source + yellow missing strokes", self.html)
         self.assertIn('value="1:1:1:2"', self.html)
         self.assertIn("parseMixedConditionRatio", self.javascript)
         for preview_id in (
@@ -246,6 +257,8 @@ class AdvancedWebStaticTests(unittest.TestCase):
             "displayed_choice_targets_json", "target_choice_id", "decoy_choice_id",
             "schema_version", "glyph_quota_1", "total_presentation_count",
             "comparison_design", "stimuli_repeated_across_conditions",
+            "condition_count_visual_complementary_silent",
+            "condition_count_visual_aligned_silent",
             "condition_count_visual_background_audio", "condition_assignment_method",
             "difficulty_match_id", "difficulty_match_position",
             "difficulty_match_score_gap", "assigned_condition",
@@ -259,6 +272,14 @@ class AdvancedWebStaticTests(unittest.TestCase):
             "visible_base_colours_json",
             "aligned_visual_base_colours_json",
             "aligned_visual_copy_colour_json",
+            "visual_complementary_equivalence_version",
+            "visual_complementary_addition_colour_json",
+            "visual_complementary_source_dot_count",
+            "visual_complementary_addition_dot_count",
+            "visual_complementary_carrier_occupancy_sha256",
+            "visual_complementary_source_mask_sha256",
+            "visual_complementary_addition_mask_sha256",
+            "visual_complementary_target_mask_sha256",
             "aligned_visual_carrier_version",
             "aligned_visual_density_equivalence_version",
             "aligned_visual_pair_axis",

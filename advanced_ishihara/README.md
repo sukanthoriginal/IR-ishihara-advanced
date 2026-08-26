@@ -117,13 +117,17 @@ session engine:
 - records a versioned estimated structural-difficulty score and its raw
   components for every stimulus;
 - generates and validates only the frozen session's assets;
-- supports silent visual, standalone IR-audio, distinct-stimulus mixed, and
-  repeated-stimulus paired comparison blocks;
+- supports silent visual, a structurally matched silent visual-composite
+  comparison, standalone IR-audio, distinct-stimulus mixed, and
+  repeated-stimulus paired blocks; its Fine-carrier conditions compare RGB
+  source plus yellow complementary additions against a complete RGB target
+  plus the one-dot-shifted complete yellow copy while sharing the standard
+  split-local changed-mapping and glyph-quota algorithm;
 - supports an isolated four-way aligned mixed block whose default `1:1:1:2`
-  allocation draws its first three conditions only from split-local identities,
-  its complementary condition only from sequences containing a canonical
-  change, and fixes exact condition×glyph margins without changing the standard
-  Mixed mode;
+  allocation draws its two aligned conditions from split-local identities and
+  both its visual-yellow and visual-IR complementary conditions from sequences
+  containing a canonical change, while fixing exact condition×glyph margins
+  without changing the standard Mixed mode;
 - supports a glyph-staircase schedule that advances only from one to three
   glyphs while reproducibly shuffling identity, aligned, and complementary
   condition nature inside each glyph tier without changing any exact

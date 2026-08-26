@@ -23,27 +23,35 @@ An even `N` gives exactly equal condition counts. For an odd `N`, the counts
 differ by one and the reproducible run code deterministically assigns the
 extra puzzle to Visual when its seed is even or IR when it is odd.
 
-Two standalone designs are also available: **Visual baseline** shows the full
-diagnostic in silence, while **IR only** shows the source scaffold with the IR
-diagnostic audio. Under Advanced research mode, **Repeated pair** presents the
-same puzzle once in each carrier-controlled condition, counterbalances which
-condition appears first, and therefore produces `2N` presentations from `N`
-stimuli.
+Three standalone designs are also available. **Visual baseline** shows the full
+diagnostic in silence. **Visual composites** is a silent two-condition
+comparison: half of its structurally matched, distinct puzzles use RGB source
+strokes plus yellow additions that jointly form the new target; the other half
+use the complete RGB target plus its complete one-dot-shifted yellow copy. Both
+use the same Fine carrier, split-local changed-mapping selection, glyph quotas,
+choices, and progression; an odd block assigns the extra condition
+reproducibly from the run code. **IR only** shows the source scaffold with the
+IR diagnostic audio. Under
+Advanced research mode, **Repeated pair** presents the same puzzle once in each
+carrier-controlled condition, counterbalances which condition appears first,
+and therefore produces `2N` presentations from `N` stimuli.
 
 The advanced **Four-way mixed** design is grammar-stratified and leaves the
 standard Mixed design unchanged. Its default `1:1:1:2` allocation is:
 
-- one complete identity target using the complementary renderer's positional
-  base palette (red; red+green; or red+green+blue) plus neutral carrier;
-- that identity geometry plus one-dot-shifted complete yellow copies of every
+- one changed visual composite whose RGB source and yellow missing strokes
+  jointly form the target, plus neutral carrier;
+- one complete identity geometry plus one-dot-shifted complete yellow copies of every
   glyph, with neutral carrier;
 - that identity geometry plus the identical shifted binary mask delivered in
 IR audio; and
 - a changed source scaffold plus its existing complementary IR diagnostic.
 
-Thus the first three conditions contain only canonical `source→source`
-identities, while the fourth contains at least one canonical addition-only
-change. The visual+visual and visual+IR paths are generated from the same two
+Thus the middle two aligned conditions contain canonical `source→source`
+identities, while both complementary conditions contain at least one canonical
+addition-only change. In the visual complementary condition, RGB is exactly the
+source mask and yellow is exactly `target − source`; their union is the target.
+The aligned visual+visual and visual+IR paths are generated from the same two
 binary masks. Overlap is represented by separate full subdots rather than by
 letting one layer erase the other or by dividing a dot into coloured halves.
 Every carrier location is rendered as two smaller, complete subdots on a
@@ -51,10 +59,10 @@ seeded random diagonal. Channel B is a bijective one-cell copy of channel A,
 so the positional RGB base layer and yellow copy layer have exactly the same
 token count, radius histogram, nominal area, and active raster-pixel count.
 Neutral carrier replaces a signal colour without changing this dyad texture.
-Isolating either complete layer therefore preserves the full identity without
-any half-dot or density cue. The complementary condition keeps its existing
-positional RGB scaffold unchanged, so visible base colour depends only on glyph
-count rather than aligned/complementary mapping class. All four conditions
+Isolating either aligned complete layer therefore preserves the full identity
+without any half-dot or density cue. Both complementary conditions keep the
+same positional RGB source scaffold; only the missing strokes move between
+yellow and IR. Visible base colour therefore depends only on glyph count. All four conditions
 share the same carrier. The ratio is configurable under Advanced block
 settings. Fine aligned plates use a 12-pixel dot pitch, equal to three pixels
 in the 178×64 audio mask; translations are seeded left or right and rejected

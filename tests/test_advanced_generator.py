@@ -91,6 +91,12 @@ class AdvancedGeneratorTests(unittest.TestCase):
         self.assertEqual(normalized["glyphComposition"], "3")
         self.assertEqual(normalized["signalMode"], "ir")
         self.assertEqual(
+            generator.normalize_settings({"signalMode": "visual-aligned"})[
+                "signalMode"
+            ],
+            "visual-aligned",
+        )
+        self.assertEqual(
             generator.normalize_settings({"progression": "glyph-growing"})[
                 "progression"
             ],
@@ -367,6 +373,106 @@ class AdvancedGeneratorTests(unittest.TestCase):
             cached_path, cached_manifest = generator.prepare_session(settings, root)
             self.assertEqual(cached_path, path)
             self.assertEqual(cached_manifest, manifest)
+
+    def test_visual_composites_compare_complementary_and_aligned_standard_specs(self):
+        common = {
+            "split": "test",
+            "baseStimulusCount": 9,
+            "glyphComposition": "automatic",
+            "progression": "glyph-growing",
+            "feedbackEnabled": False,
+            "seed": 9128,
+        }
+        visual_plan = generator.plan_session({
+            **common, "signalMode": "visual",
+        })
+        aligned_plan = generator.plan_session({
+            **common, "signalMode": "visual-aligned",
+        })
+        self.assertEqual(visual_plan["base_specs"], aligned_plan["base_specs"])
+        self.assertEqual(
+            visual_plan["eligible_by_glyph_count"],
+            aligned_plan["eligible_by_glyph_count"],
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path, manifest = generator.prepare_session(
+                {**common, "signalMode": "visual-aligned"},
+                Path(temp_dir),
+            )
+            self.assertFalse(manifest["audio_generated"])
+            self.assertEqual(
+                manifest["comparison_design"],
+                "distinct-stimulus-silent-aligned-visual-control",
+            )
+            self.assertEqual(
+                manifest["condition_distribution"],
+                {
+                    generator.VISUAL_COMPOSITE_CONDITIONS[0]: 5,
+                    generator.VISUAL_ALIGNED_SILENT_CONDITION: 4,
+                },
+            )
+            assignment = manifest["condition_assignment"]
+            self.assertEqual(assignment["global_absolute_difference"], 1)
+            self.assertEqual(assignment["complete_difficulty_match_pairs"], 4)
+            self.assertTrue(assignment["all_complete_pairs_cross_condition"])
+            self.assertTrue(generator.manifest_is_complete(manifest, path.parent))
+            for stimulus in manifest["stimuli"]:
+                self.assertGreaterEqual(stimulus["changed_count"], 1)
+                self.assertEqual(
+                    stimulus["visible_signal_dot_count"],
+                    stimulus["aligned_visual_base_dot_count"],
+                )
+                self.assertEqual(
+                    stimulus["aligned_visual_base_dot_count"],
+                    stimulus["aligned_visual_shifted_dot_count"],
+                )
+                self.assertEqual(
+                    stimulus["aligned_visual_copy_colour"],
+                    list(ALIGNED_VISUAL_COPY_COLOUR),
+                )
+                self.assertEqual(
+                    stimulus["visual_complementary_equivalence_version"],
+                    "source-plus-diagnostic-equals-target-v1",
+                )
+                self.assertEqual(
+                    stimulus["visual_complementary_addition_colour"],
+                    list(ALIGNED_VISUAL_COPY_COLOUR),
+                )
+                self.assertGreater(
+                    stimulus["visual_complementary_addition_dot_count"], 0,
+                )
+                self.assertEqual(
+                    stimulus["visual_complementary_source_dot_count"],
+                    stimulus["balanced_visual_source_dot_count"],
+                )
+                self.assertEqual(
+                    stimulus["visual_complementary_carrier_occupancy_sha256"],
+                    stimulus["aligned_carrier_occupancy_sha256"],
+                )
+                complementary_image = np.asarray(Image.open(
+                    path.parent / stimulus["visual_complementary_plate_png"]
+                ))
+                yellow = (
+                    (complementary_image[:, :, 0] > 150)
+                    & (complementary_image[:, :, 1] > 130)
+                    & (complementary_image[:, :, 2] < 130)
+                )
+                self.assertGreater(np.count_nonzero(yellow), 0)
+            for trial in manifest["trials"]:
+                stimulus = next(
+                    item for item in manifest["stimuli"]
+                    if item["stimulus_id"] == trial["stimulus_id"]
+                )
+                self.assertIn(trial["condition"], generator.VISUAL_COMPOSITE_CONDITIONS)
+                expected_plate = (
+                    stimulus["visual_aligned_plate_png"]
+                    if trial["condition"] == generator.VISUAL_ALIGNED_SILENT_CONDITION
+                    else stimulus["visual_complementary_plate_png"]
+                )
+                self.assertEqual(trial["plate_png"], expected_plate)
+                self.assertIsNone(trial["audio_wav"])
+                self.assertEqual(trial["audio_content"], "none")
 
     def test_selection_and_foils_do_not_depend_on_progression_or_signal_mode(self):
         families = [
@@ -860,6 +966,21 @@ class AdvancedGeneratorTests(unittest.TestCase):
         })
         self.assertTrue(plan["combinatorial_verification"]["verified"])
         self.assertEqual(
+            plan["combinatorial_verification"]["condition_mapping_classes"],
+            {
+                "visual_background_audio": "changed",
+                "visual_aligned_overlay": "identity",
+                "visual_aligned_ir_audio": "identity",
+                "ir_audio": "changed",
+            },
+        )
+        self.assertEqual(
+            plan["combinatorial_verification"]["identity_condition_count"], 12,
+        )
+        self.assertEqual(
+            plan["combinatorial_verification"]["changed_condition_count"], 18,
+        )
+        self.assertEqual(
             plan["combinatorial_verification"]["eligible_by_glyph_count"]["1"],
             {"identity": 6, "changed": 24, "total": 30},
         )
@@ -875,7 +996,9 @@ class AdvancedGeneratorTests(unittest.TestCase):
                 self.assertEqual(spec["mappingClass"], "changed")
                 self.assertGreaterEqual(spec["changedCount"], 1)
             self.assertEqual(len({tuple(item) for item in spec["choiceTargets"]}), 4)
-        self.assertEqual(set(one_glyph_identities), {
+        self.assertEqual(len(one_glyph_identities), 4)
+        self.assertEqual(len(set(one_glyph_identities)), 4)
+        self.assertTrue(set(one_glyph_identities) <= {
             "gamma", "v", "j", "four", "e", "h",
         })
         self.assertEqual(
@@ -1261,6 +1384,18 @@ class AdvancedGeneratorTests(unittest.TestCase):
                 else:
                     self.assertEqual(stimulus["mapping_class"], "changed")
                     self.assertGreaterEqual(stimulus["changed_count"], 1)
+                if condition == "visual_background_audio":
+                    self.assertTrue((
+                        aligned_path.parent
+                        / stimulus["visual_complementary_plate_png"]
+                    ).is_file())
+                    self.assertEqual(
+                        stimulus["visual_complementary_equivalence_version"],
+                        "source-plus-diagnostic-equals-target-v1",
+                    )
+                    self.assertGreater(
+                        stimulus["visual_complementary_addition_dot_count"], 0,
+                    )
                 if condition == "visual_aligned_ir_audio":
                     self.assertIsNotNone(stimulus["aligned_target_wav"])
                     self.assertIsNone(stimulus["background_wav"])
@@ -1275,6 +1410,21 @@ class AdvancedGeneratorTests(unittest.TestCase):
                     self.assertIsNone(stimulus["aligned_target_wav"])
                 else:
                     self.assertIsNotNone(stimulus["ir_probe_wav"])
+            visual_complementary_trial = next(
+                trial for trial in aligned_manifest["trials"]
+                if trial["condition"] == "visual_background_audio"
+            )
+            visual_complementary_stimulus = next(
+                stimulus for stimulus in aligned_manifest["stimuli"]
+                if stimulus["stimulus_id"]
+                == visual_complementary_trial["stimulus_id"]
+            )
+            self.assertEqual(
+                visual_complementary_trial["plate_png"],
+                visual_complementary_stimulus[
+                    "visual_complementary_plate_png"
+                ],
+            )
             self.assertTrue(generator.manifest_is_complete(
                 aligned_manifest, aligned_path.parent,
             ))

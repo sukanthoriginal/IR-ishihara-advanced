@@ -104,6 +104,7 @@
             <optgroup label="Standard simulator modes">
               <option value="mixed" selected>Mixed visual vs IR — carrier-controlled</option>
               <option value="visual">Visual baseline — silent</option>
+              <option value="visual-aligned">Visual composites — complementary vs aligned (silent)</option>
               <option value="ir">IR only — audio diagnostic</option>
             </optgroup>
             <optgroup label="Advanced research mode">
@@ -111,7 +112,7 @@
               <option value="paired">Repeated pair — same puzzle twice (research)</option>
             </optgroup>
           </select>
-          <span class="field-note">Standard Mixed compares visual and IR diagnostics. Four-way mixed assigns complete identities to its three controls and changed mappings to complementary IR.</span>
+          <span class="field-note">Visual composites mixes two silent Fine-carrier conditions: RGB source plus yellow additions that jointly form a new target, versus a complete RGB target plus its complete one-dot yellow copy. Four-way mixed includes that same yellow missing-stroke composite, aligned visual and IR copies, and complementary IR.</span>
         </label>
         <label>Stimuli
           <input id="base-stimulus-count" type="number" min="4" max="96" step="1" value="30">
@@ -165,7 +166,7 @@
           </label>
           <label id="mixed-condition-ratio-field" class="hidden">Four-way condition ratio
             <input id="mixed-condition-ratio" value="1:1:1:2" inputmode="numeric" pattern="[0-9]+:[0-9]+:[0-9]+:[0-9]+">
-            <span class="field-note">Identity visual carrier : identity visual+visual : identity visual+IR : changed complementary visual+IR. Identity and complementary bases share red / red+green / RGB glyph colours; aligned visual copies are yellow. Every condition uses the same exact-density 1,239-dyad Fine carrier. Positive integers only.</span>
+            <span class="field-note">Changed visual complementary (RGB source + yellow missing strokes) : identity visual aligned copy : identity visual+IR aligned copy : changed complementary visual+IR. Bases use red / red+green / RGB by glyph count. Every condition uses the same exact-density 1,239-dyad Fine carrier. Positive integers only.</span>
           </label>
         </div>
       </details>
@@ -260,6 +261,6 @@
   </main>
 
   <div id="boot-error" class="page hidden status error"></div>
-  <script type="module" src="app.js?v=advanced-11"></script>
+  <script type="module" src="app.js?v=advanced-14"></script>
 </body>
 </html>

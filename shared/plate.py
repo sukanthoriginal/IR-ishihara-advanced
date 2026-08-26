@@ -285,6 +285,7 @@ def render_trial_images(
     *,
     include_aligned_assets: bool = False,
     include_balanced_carrier_assets: bool = False,
+    include_visual_complementary_asset: bool = False,
 ) -> dict:
     rng = np.random.default_rng(seed)
     source_mask, diagnostic_mask, target_mask = difference_mask(source_ids, target_ids)
@@ -304,13 +305,19 @@ def render_trial_images(
 
     balanced_assets = {}
     aligned_assets = {}
-    if include_balanced_carrier_assets or include_aligned_assets:
+    visual_complementary_assets = {}
+    needs_fine_carrier = (
+        include_balanced_carrier_assets
+        or include_aligned_assets
+        or include_visual_complementary_asset
+    )
+    if needs_fine_carrier:
         aligned_dx = (
             ALIGNED_DISPLACEMENT_AUDIO_PIXELS
             if seed % 2 == 0 else -ALIGNED_DISPLACEMENT_AUDIO_PIXELS
         )
         aligned_dy = 0
-    if include_balanced_carrier_assets or include_aligned_assets:
+    if needs_fine_carrier:
         aligned_dots = make_aligned_dot_layout()
         balanced_source_plate, balanced_source_stats = _draw_balanced_dyad_plate(
             aligned_dots,
@@ -319,6 +326,32 @@ def render_trial_images(
             np.random.default_rng(plate_colour_seed),
             shift_audio_dx=aligned_dx,
         )
+    if include_visual_complementary_asset:
+        visual_complementary_plate, visual_complementary_stats = (
+            _draw_balanced_dyad_plate(
+                aligned_dots,
+                source_position_masks,
+                SOURCE_COLOURS,
+                np.random.default_rng(plate_colour_seed),
+                shift_audio_dx=aligned_dx,
+                channel_b_mask=diagnostic_mask,
+            )
+        )
+        if (
+            balanced_source_stats["carrier_occupancy_sha256"]
+            != visual_complementary_stats["carrier_occupancy_sha256"]
+            or balanced_source_stats["channel_a_dot_count"]
+            != visual_complementary_stats["channel_a_dot_count"]
+            or balanced_source_stats["channel_a_radius_histogram"]
+            != visual_complementary_stats["channel_a_radius_histogram"]
+            or balanced_source_stats["channel_a_radius_area_units"]
+            != visual_complementary_stats["channel_a_radius_area_units"]
+            or balanced_source_stats["channel_a_active_pixel_count"]
+            != visual_complementary_stats["channel_a_active_pixel_count"]
+        ):
+            raise RuntimeError(
+                "visible complementary source differs from balanced source"
+            )
     if include_aligned_assets:
         aligned_target_mask = translate_mask_without_clipping(
             target_mask, aligned_dx, aligned_dy,
@@ -376,7 +409,7 @@ def render_trial_images(
     visual_plate.save(visual_plate_path)
     ir_input.save(ir_input_path)
     background_input.save(background_input_path)
-    if include_balanced_carrier_assets or include_aligned_assets:
+    if needs_fine_carrier:
         balanced_source_path = plate_dir / f"{stem}_balanced_source.png"
         balanced_source_plate.save(balanced_source_path)
         balanced_assets = {
@@ -436,6 +469,52 @@ def render_trial_images(
             "visible_base_colours": [
                 list(colour) for colour in SOURCE_COLOURS[:len(source_ids)]
             ],
+        }
+    if include_visual_complementary_asset:
+        visual_complementary_path = (
+            plate_dir / f"{stem}_visual_complementary.png"
+        )
+        visual_complementary_plate.save(visual_complementary_path)
+        visual_complementary_assets = {
+            "visual_complementary_plate_png": str(
+                visual_complementary_path.relative_to(output_dir)
+            ),
+            "visual_complementary_equivalence_version": (
+                "source-plus-diagnostic-equals-target-v1"
+            ),
+            "visual_complementary_addition_colour": list(
+                ALIGNED_VISUAL_COPY_COLOUR
+            ),
+            "visual_complementary_source_dot_count": (
+                visual_complementary_stats["channel_a_dot_count"]
+            ),
+            "visual_complementary_addition_dot_count": (
+                visual_complementary_stats["channel_b_dot_count"]
+            ),
+            "visual_complementary_source_radius_histogram": (
+                visual_complementary_stats["channel_a_radius_histogram"]
+            ),
+            "visual_complementary_addition_radius_histogram": (
+                visual_complementary_stats["channel_b_radius_histogram"]
+            ),
+            "visual_complementary_source_active_pixel_count": (
+                visual_complementary_stats["channel_a_active_pixel_count"]
+            ),
+            "visual_complementary_addition_active_pixel_count": (
+                visual_complementary_stats["channel_b_active_pixel_count"]
+            ),
+            "visual_complementary_carrier_occupancy_sha256": (
+                visual_complementary_stats["carrier_occupancy_sha256"]
+            ),
+            "visual_complementary_source_mask_sha256": mask_digest(
+                source_mask
+            ),
+            "visual_complementary_addition_mask_sha256": mask_digest(
+                diagnostic_mask
+            ),
+            "visual_complementary_target_mask_sha256": mask_digest(
+                target_mask
+            ),
         }
     if include_aligned_assets:
         canonical_plate_path = plate_dir / f"{stem}_visual_canonical.png"
@@ -532,6 +611,7 @@ def render_trial_images(
         "diagnostic_pixel_count": int(np.count_nonzero(diagnostic_values)),
         **balanced_assets,
         **aligned_assets,
+        **visual_complementary_assets,
     }
 
 
@@ -619,14 +699,17 @@ def _draw_balanced_dyad_plate(
     *,
     shift_audio_dx: int,
     copy_channel_a_to_b: bool = False,
+    channel_b_mask: Image.Image | None = None,
 ) -> tuple[Image.Image, dict]:
     """Render a density-balanced two-layer carrier using complete subdots.
 
     Every grid cell contains one A and one B subdot on a seeded diagonal. The
-    two layers receive the same fixed radius multiset. When B is informative,
-    its active cells are a bijective one-cell translation of A's sampled cells;
-    B is never independently resampled from the shifted raster mask.
+    two layers receive the same fixed radius multiset. B may either be a
+    bijective one-cell translation of A's sampled cells or an independent
+    complementary-addition mask sampled on the same carrier.
     """
+    if copy_channel_a_to_b and channel_b_mask is not None:
+        raise ValueError("channel B cannot be both a copy and a complementary mask")
     if len(channel_a_colours) < len(channel_a_masks):
         raise ValueError("each channel-A mask requires one colour")
     shift_plate_pixels = shift_audio_dx * PLATE_SCALE
@@ -685,6 +768,10 @@ def _draw_balanced_dyad_plate(
         for column, row in ordered_cells
     }
     channel_a_arrays = [np.asarray(mask) > 0 for mask in channel_a_masks]
+    channel_b_values = (
+        np.asarray(channel_b_mask) > 0
+        if channel_b_mask is not None else None
+    )
     channel_a_position: dict[tuple[int, int], int | None] = {}
     for cell, (x, y, _parent_radius) in dot_by_cell.items():
         audio_x = min(AUDIO_WIDTH - 1, x // PLATE_SCALE)
@@ -747,11 +834,17 @@ def _draw_balanced_dyad_plate(
         a_position = channel_a_position[cell]
         source_column = column - shift_cells
         b_source = (source_column, row)
-        b_active = (
-            copy_channel_a_to_b
-            and 0 <= source_column < len(columns)
-            and channel_a_position[b_source] is not None
-        )
+        if copy_channel_a_to_b:
+            b_active = (
+                0 <= source_column < len(columns)
+                and channel_a_position[b_source] is not None
+            )
+        elif channel_b_values is not None:
+            audio_x = min(AUDIO_WIDTH - 1, original_x // PLATE_SCALE)
+            audio_y = min(AUDIO_HEIGHT - 1, original_y // PLATE_SCALE)
+            b_active = bool(channel_b_values[audio_y, audio_x])
+        else:
+            b_active = False
         a_active = a_position is not None
         overlap_count += int(a_active and b_active)
         if a_active:
