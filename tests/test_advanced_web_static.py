@@ -51,6 +51,18 @@ class AdvancedWebStaticTests(unittest.TestCase):
         self.assertIn("css_px_per_audio_column", self.javascript)
         self.assertIn("coordinate_mapping", self.javascript)
 
+    def test_results_include_glyph_level_condition_analysis(self):
+        self.assertIn("summarizeTrialRows", self.javascript)
+        self.assertIn("Exact plates", self.javascript)
+        self.assertIn("All glyphs", self.javascript)
+        self.assertIn("Non-aligned transformed", self.javascript)
+        self.assertIn("Non-aligned unchanged", self.javascript)
+        self.assertIn("Not applicable", self.javascript)
+        self.assertIn("Complete target visible", self.javascript)
+        self.assertIn("Error depth", self.javascript)
+        self.assertIn("Median correct RT", self.javascript)
+        self.assertIn("summary-table-wrap", self.html)
+
     def test_full_simulator_controls_and_signal_modes_are_explicit(self):
         self.assertIn("Training set — 2/3 mappings (13/19 source families)", self.html)
         self.assertIn("Held-out test — 1/3 mappings (6/19 source families)", self.html)
@@ -87,11 +99,11 @@ class AdvancedWebStaticTests(unittest.TestCase):
             self.html,
         )
         self.assertIn(
-            '<option value="glyph-growing">Glyph staircase — 1→2→3, conditions shuffled</option>',
+            '<option value="glyph-growing" selected>Glyph staircase — 1→2→3, conditions shuffled</option>',
             self.html,
         )
         self.assertIn(
-            '<option value="growing" selected>Growing practice — simpler to harder</option>',
+            '<option value="growing">Growing practice — simpler to harder</option>',
             self.html,
         )
         self.assertIn('<option value="on" selected>On</option>', self.html)

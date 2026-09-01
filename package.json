@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/test_advanced_grammar.mjs && node tests/test_shared_runtime.mjs"
+    "test": "node tests/test_advanced_grammar.mjs && node tests/test_shared_runtime.mjs && node tests/test_results_summary.mjs"
   }
 }

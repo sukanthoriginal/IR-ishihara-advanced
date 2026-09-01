@@ -98,8 +98,8 @@ experimental blocks:
   delivery, the advanced Four-way mixed design, and Repeated-pair design;
 - 4--96 stimulus instances (30 by default), presented once in Mixed and standalone modes, with
   Repeated pair producing twice as many presentations;
-- **Growing practice** from simpler to harder by default, **Glyph staircase**
-  from one to three glyphs while shuffling condition nature within each tier,
+- **Glyph staircase** from one to three glyphs by default while shuffling
+  condition nature within each tier, **Growing practice** from simpler to harder,
   or **Shuffled** progression across the balanced difficulty range;
 - manual feedback (on by default), keyboard or pointer response, and compact,
   expanded, or physically calibrated presentation; and
@@ -153,14 +153,22 @@ prioritising glyph count, difficulty stratum, changed count, and then score.
 This matching is for balance during piloting; it is not an empirically
 validated measure of equal visual and IR difficulty.
 
-The default **Growing practice** progression orders the estimate from lower to
-higher; Repeated-pair growing blocks use two ordered passes. **Glyph staircase**
-orders only the one-/two-/three-glyph tiers and applies a reproducible seeded
-shuffle inside each tier. Because condition labels remain attached to complete
-stimulus records, this randomizes identity, aligned, and complementary nature
-without changing the exact condition×glyph margins. **Shuffled** randomizes the
-whole selected difficulty range. Here “Mixed” names the signal design, while
-these progression labels name trial order.
+The default **Glyph staircase** progression orders only the one-/two-/three-glyph
+tiers and applies a reproducible seeded shuffle inside each tier. Because
+condition labels remain attached to complete stimulus records, this randomizes
+identity, aligned, and complementary nature without changing the exact
+condition×glyph margins. **Growing practice** orders the difficulty estimate
+from lower to higher; Repeated-pair growing blocks use two ordered passes.
+**Shuffled** randomizes the whole selected difficulty range. Here “Mixed” names
+the signal design, while these progression labels name trial order.
+
+After each block, the results panel reports exact-plate and all-glyph accuracy
+for every condition. Complementary conditions additionally report transformed-
+and unchanged-glyph accuracy. Those measures are not applied to aligned controls,
+where the complete target is already visible. The panel also shows error depth,
+decoy capture, and median correct response time. These glyph summaries are
+derived from the existing source, target, and response sequences; the CSV schema
+remains unchanged.
 
 ## Run locally
 

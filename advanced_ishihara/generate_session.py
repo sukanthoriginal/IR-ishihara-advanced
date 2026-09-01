@@ -194,7 +194,7 @@ def normalize_settings(settings: dict) -> dict:
     if glyph_composition not in {"automatic", "1", "2", "3"}:
         raise ValueError("glyphComposition must be automatic, 1, 2, or 3")
 
-    progression = settings.get("progression", "growing")
+    progression = settings.get("progression", "glyph-growing")
     if progression not in PROGRESSION_MODES:
         raise ValueError(
             "progression must be growing, glyph-growing, or mixed"
@@ -2244,7 +2244,7 @@ def make_schedule(stimuli: list[dict], settings: dict, rng: random.Random) -> li
             signal_mode = "paired" if settings.get("mode") == "mixed" else "visual"
         else:
             signal_mode = "mixed"
-    progression = settings.get("progression", "growing")
+    progression = settings.get("progression", "glyph-growing")
     ordered = list(stimuli)
     if progression == "growing":
         ordered.sort(key=lambda item: (
@@ -3226,7 +3226,7 @@ def parse_args() -> argparse.Namespace:
         default="automatic",
     )
     parser.add_argument(
-        "--progression", choices=PROGRESSION_MODES, default="growing",
+        "--progression", choices=PROGRESSION_MODES, default="glyph-growing",
     )
     parser.add_argument(
         "--feedback", action=argparse.BooleanOptionalAction, default=True,

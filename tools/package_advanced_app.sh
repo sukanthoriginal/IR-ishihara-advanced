@@ -16,7 +16,13 @@ runtime_source_digest="$(
   LC_ALL=C LANG=C /usr/bin/shasum -a 256 \
     "$repo_dir/shared/plate.py" \
     "$repo_dir/shared/experiment_server.py" \
+    "$repo_dir/shared/timing.mjs" \
+    "$repo_dir/shared/csv.mjs" \
+    "$repo_dir/advanced/index.html" \
+    "$repo_dir/advanced/app.js" \
+    "$repo_dir/advanced/results.mjs" \
     "$repo_dir/advanced_ishihara/generate_session.py" \
+    "$repo_dir/advanced_ishihara/grammar.mjs" \
   | LC_ALL=C LANG=C /usr/bin/shasum -a 256 \
   | /usr/bin/awk '{print $1}'
 )"
@@ -52,6 +58,7 @@ for required_path in \
   "$template_dir/Advanced-Ishihara-Launcher" \
   "$repo_dir/server.py" \
   "$repo_dir/advanced/index.html" \
+  "$repo_dir/advanced/results.mjs" \
   "$repo_dir/advanced_ishihara/grammar.mjs"; do
   if [[ ! -f "$required_path" ]]; then
     print -u2 "Missing required file: ${required_path}"

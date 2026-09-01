@@ -6,6 +6,10 @@ import {
   visualAngleDeg,
 } from '../shared/timing.mjs';
 import { safeFilenamePart, saveCsv } from '../shared/csv.mjs';
+import {
+  conditionRequiresTransformationInference,
+  summarizeTrialRows,
+} from './results.mjs';
 
 const ASPECT_RATIO = 178 / 64;
 const NATIVE_WIDTH = 712;
@@ -1909,13 +1913,43 @@ async function finishBlock() {
   trialScreen.classList.add('hidden');
   endScreen.classList.remove('hidden');
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-  const totalCorrect = trialRows.reduce((total, row) => total + row.correct, 0);
+  const overall = summarizeTrialRows(trialRows);
+  const inferredTransformations = summarizeTrialRows(trialRows.filter(row => (
+    conditionRequiresTransformationInference(row.condition)
+  )));
   const conditions = [...new Set(trialRows.map(row => row.condition))];
   summary.innerHTML = `
-    <p><strong>Overall accuracy:</strong> ${(100 * totalCorrect / trialRows.length).toFixed(1)}% (${totalCorrect}/${trialRows.length})</p>
-    <table class="summary-table"><thead><tr><th>Condition</th><th>Accuracy</th><th>Decoy capture</th><th>Median choice RT</th></tr></thead><tbody>
-      ${conditions.map(condition => summarizeCondition(condition)).join('')}
-    </tbody></table>`;
+    <dl class="summary-grid results-overview" aria-label="Overall block performance">
+      ${summaryMetric('Exact plates', overall.plateCorrect, overall.plateTotal)}
+      ${summaryMetric('All glyphs', overall.glyphCorrect, overall.glyphTotal)}
+      ${summaryMetric(
+        'Non-aligned transformed',
+        inferredTransformations.transformedCorrect,
+        inferredTransformations.transformedTotal,
+      )}
+      ${summaryMetric(
+        'Non-aligned unchanged',
+        inferredTransformations.unchangedCorrect,
+        inferredTransformations.unchangedTotal,
+      )}
+    </dl>
+    <div class="summary-table-wrap">
+      <table class="summary-table results-table">
+        <thead><tr>
+          <th>Condition</th>
+          <th>Exact plates</th>
+          <th>All glyphs</th>
+          <th>Transformed</th>
+          <th>Unchanged</th>
+          <th>Error depth</th>
+          <th>Decoy capture</th>
+          <th>Median correct RT</th>
+        </tr></thead>
+        <tbody>${conditions.map(condition => summarizeCondition(condition)).join('')}</tbody>
+      </table>
+    </div>
+    <p class="field-note results-note">Exact plates require every glyph to match. Transformed positions have different source and target glyphs; unchanged positions measure false transformations. Transformation analysis excludes aligned controls because their complete target is visible. Error depth counts incorrect responses by the number of missed glyph positions.</p>
+    ${overall.invalidGlyphRows ? `<p class="status error">Glyph-level scoring was unavailable for ${overall.invalidGlyphRows} trial row${overall.invalidGlyphRows === 1 ? '' : 's'}.</p>` : ''}`;
   saveButton.disabled = true;
   newButton.disabled = true;
   exposureStatus.className = 'status';
@@ -1969,10 +2003,56 @@ function updateExposureSyncStatus({ failedExposureCount, leaseReleaseError }) {
 
 function summarizeCondition(condition) {
   const rows = trialRows.filter(row => row.condition === condition);
-  const correct = rows.reduce((total, row) => total + row.correct, 0);
-  const decoys = rows.reduce((total, row) => total + row.decoy_selected, 0);
-  const correctRts = rows.filter(row => row.correct).map(row => row.rt_choice_onset_ms);
-  return `<tr><td>${humanCondition(condition)}</td><td>${(100 * correct / rows.length).toFixed(1)}% (${correct}/${rows.length})</td><td>${(100 * decoys / rows.length).toFixed(1)}% (${decoys}/${rows.length})</td><td>${correctRts.length ? Math.round(median(correctRts)) + ' ms' : '—'}</td></tr>`;
+  const result = summarizeTrialRows(rows);
+  const label = summaryConditionLabel(condition);
+  const transformationCells = conditionRequiresTransformationInference(condition)
+    ? `<td>${formatResultRate(result.transformedCorrect, result.transformedTotal)}</td>
+       <td>${formatResultRate(result.unchangedCorrect, result.unchangedTotal)}</td>`
+    : `<td colspan="2"><span class="result-not-applicable">Not applicable</span><span class="condition-detail">Complete target visible</span></td>`;
+  return `<tr>
+    <td><strong>${label}</strong><span class="condition-detail">${humanCondition(condition)}</span></td>
+    <td>${formatResultRate(result.plateCorrect, result.plateTotal)}</td>
+    <td>${formatResultRate(result.glyphCorrect, result.glyphTotal)}</td>
+    ${transformationCells}
+    <td>${formatErrorDepth(result.missedGlyphCounts)}</td>
+    <td>${formatResultRate(result.decoySelected, result.plateTotal)}</td>
+    <td>${result.correctRts.length ? Math.round(median(result.correctRts)) + ' ms' : '—'}</td>
+  </tr>`;
+}
+
+function summaryMetric(label, correct, total) {
+  return `<div><dt>${label}</dt><dd>${formatResultRate(correct, total)}</dd></div>`;
+}
+
+function formatResultRate(correct, total) {
+  if (!total) return '—';
+  return `${(100 * correct / total).toFixed(1)}% (${correct}/${total})`;
+}
+
+function formatErrorDepth(missedGlyphCounts) {
+  const entries = Object.entries(missedGlyphCounts)
+    .map(([missed, count]) => [Number(missed), count])
+    .filter(([missed, count]) => missed > 0 && count > 0)
+    .sort(([left], [right]) => left - right);
+  if (!entries.length) return '—';
+  return entries.map(([missed, count]) => (
+    `${missed} missed: ${count}`
+  )).join(' · ');
+}
+
+function summaryConditionLabel(condition) {
+  return {
+    'visual_silent': 'Visual baseline',
+    'visual_canonical_silent': 'Canonical visual control',
+    'visual_complementary_silent': 'Visual complementary',
+    'visual_aligned_silent': 'Visual aligned composite',
+    'visual_background_audio': manifest?.settings?.signalMode === 'mixed-aligned'
+      ? 'Visual complementary'
+      : 'Visual + neutral carrier',
+    'visual_aligned_overlay': 'Visual aligned identity',
+    'visual_aligned_ir_audio': 'Visual + IR aligned identity',
+    'ir_audio': 'Complementary IR',
+  }[condition] || condition;
 }
 
 async function saveResults() {
