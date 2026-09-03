@@ -136,9 +136,12 @@ class AdvancedWebStaticTests(unittest.TestCase):
         self.assertIn("'visual_aligned_overlay'", self.javascript)
         self.assertIn("'visual_aligned_ir_audio'", self.javascript)
         self.assertIn("Visual aligned + composite · neutral carrier", self.javascript)
-        self.assertIn("Complete identity visual + shifted identical IR", self.javascript)
         self.assertIn(
-            "Four-way mixed includes that same yellow missing-stroke composite",
+            "Complete identity visual + matched-coverage shifted IR",
+            self.javascript,
+        )
+        self.assertIn(
+            "aligned visual and IR redundancy uses a matched number of glyph positions",
             self.html,
         )
 
@@ -277,7 +280,18 @@ class AdvancedWebStaticTests(unittest.TestCase):
             "mapping_class", "choice_rule", "combinatorial_verification_passed",
             "combinatorial_eligible_by_glyph_json",
             "condition_by_glyph_count_json",
+            "secondary_signal_matching_version",
+            "secondary_signal_matching_passed",
+            "secondary_signal_matching_audit_json",
+            "secondary_signal_profile_role",
+            "secondary_signal_glyph_count",
+            "secondary_signal_glyph_ratio",
+            "secondary_signal_position_indices_json",
+            "secondary_signal_reference_condition",
+            "secondary_signal_distribution_source",
             "canonical_target_mask_sha256", "aligned_target_mask_sha256",
+            "aligned_signal_base_mask_sha256",
+            "aligned_signal_base_pixel_count",
             "aligned_visual_base_mask_sha256",
             "aligned_visual_shifted_mask_sha256",
             "aligned_visual_palette_version",

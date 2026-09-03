@@ -120,7 +120,7 @@
               <option value="paired">Repeated pair — same puzzle twice (research)</option>
             </optgroup>
           </select>
-          <span class="field-note">Visual composites mixes two silent Fine-carrier conditions: RGB source plus yellow additions that jointly form a new target, versus a complete RGB target plus its complete one-dot yellow copy. Four-way mixed includes that same yellow missing-stroke composite, aligned visual and IR copies, and complementary IR.</span>
+          <span class="field-note">Visual composites mixes two silent Fine-carrier conditions: RGB source plus yellow additions that jointly form a new target, versus a complete RGB target plus its complete one-dot yellow copy. In Four-way mixed, aligned visual and IR redundancy uses a matched number of glyph positions from the corresponding complementary condition.</span>
         </label>
         <label>Stimuli
           <input id="base-stimulus-count" type="number" min="4" max="96" step="1" value="30">
@@ -174,7 +174,7 @@
           </label>
           <label id="mixed-condition-ratio-field" class="hidden">Four-way condition ratio
             <input id="mixed-condition-ratio" value="1:1:1:2" inputmode="numeric" pattern="[0-9]+:[0-9]+:[0-9]+:[0-9]+">
-            <span class="field-note">Changed visual complementary (RGB source + yellow missing strokes) : identity visual aligned copy : identity visual+IR aligned copy : changed complementary visual+IR. Bases use red / red+green / RGB by glyph count. Every condition uses the same exact-density 1,239-dyad Fine carrier. Positive integers only.</span>
+            <span class="field-note">Changed visual complementary (RGB source + yellow missing strokes) : identity visual aligned redundancy : identity visual+IR aligned redundancy : changed complementary visual+IR. Within each modality and glyph count, aligned secondary-cue coverage is proportionally matched to the complementary trials. Bases use red / red+green / RGB by glyph count. Every condition uses the same exact-density 1,239-dyad Fine carrier. Positive integers only.</span>
           </label>
         </div>
       </details>
@@ -269,6 +269,6 @@
   </main>
 
   <div id="boot-error" class="page hidden status error"></div>
-  <script type="module" src="app.js?v=advanced-16"></script>
+  <script type="module" src="app.js?v=advanced-17"></script>
 </body>
 </html>

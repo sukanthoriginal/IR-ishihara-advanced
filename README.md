@@ -41,32 +41,43 @@ standard Mixed design unchanged. Its default `1:1:1:2` allocation is:
 
 - one changed visual composite whose RGB source and yellow missing strokes
   jointly form the target, plus neutral carrier;
-- one complete identity geometry plus one-dot-shifted complete yellow copies of every
-  glyph, with neutral carrier;
-- that identity geometry plus the identical shifted binary mask delivered in
-IR audio; and
+- one complete identity geometry plus one-dot-shifted yellow redundancy on a
+  matched subset of glyph positions, with neutral carrier;
+- that complete identity geometry plus the selected shifted binary mask
+  delivered in IR audio; and
 - a changed source scaffold plus its existing complementary IR diagnostic.
 
 Thus the middle two aligned conditions contain canonical `source→source`
 identities, while both complementary conditions contain at least one canonical
 addition-only change. In the visual complementary condition, RGB is exactly the
 source mask and yellow is exactly `target − source`; their union is the target.
-The aligned visual+visual and visual+IR paths are generated from the same two
-binary masks. Overlap is represented by separate full subdots rather than by
-letting one layer erase the other or by dividing a dot into coloured halves.
+Within each modality and glyph count, the aligned secondary-cue coverage
+distribution is proportionally apportioned from the paired complementary
+condition: changed complementary positions define its observed coverage, and
+the aligned identities receive deterministic position subsets of the same
+sizes. The selected-position pass does not alter any source, target, mapping,
+choice, signature, repetition index, or condition×glyph margin.
+If the paired groups contain different numbers of trials, seeded
+largest-remainder apportionment supplies the nearest integer distribution and
+the manifest records its rounding error.
+
+The aligned visual+visual and visual+IR paths use the complete identity mask as
+the primary cue and the same selected-position mask as shifted redundancy.
+Overlap is represented by separate full subdots rather than by letting one
+layer erase the other or by dividing a dot into coloured halves.
 Every carrier location is rendered as two smaller, complete subdots on a
-seeded random diagonal. Channel B is a bijective one-cell copy of channel A,
-so the positional RGB base layer and yellow copy layer have exactly the same
-token count, radius histogram, nominal area, and active raster-pixel count.
-Neutral carrier replaces a signal colour without changing this dyad texture.
-Isolating either aligned complete layer therefore preserves the full identity
-without any half-dot or density cue. Both complementary conditions keep the
-same positional RGB source scaffold; only the missing strokes move between
-yellow and IR. Visible base colour therefore depends only on glyph count. All four conditions
-share the same carrier. The ratio is configurable under Advanced block
-settings. Fine aligned plates use a 12-pixel dot pitch, equal to three pixels
-in the 178×64 audio mask; translations are seeded left or right and rejected
-if they crop any target geometry.
+seeded random diagonal. Channel B is a bijective one-cell copy of channel A in
+the underlying carrier, so carrier opportunity remains fixed while active
+secondary-signal density follows the selected glyph subset. Neutral carrier
+replaces a signal colour without changing this dyad texture. The complete
+primary identity remains independently readable without any half-dot cue. Both
+complementary conditions keep the same positional RGB source scaffold; only
+the missing strokes move between yellow and IR. Visible base colour therefore
+depends only on glyph count. All four conditions share the same carrier. The
+ratio is configurable under Advanced block settings. Fine aligned plates use a
+12-pixel dot pitch, equal to three pixels in the 178×64 audio mask;
+translations are seeded left or right and rejected if they crop the selected
+geometry.
 
 Each background carrier is normalized to a low fixed RMS, and that exact
 linear gain is also applied to its IR-probe counterfactual. The diagnostic's
@@ -119,7 +130,8 @@ three.
 For Four-way mixed, exact largest-remainder apportionment fixes both the
 condition totals and the one-/two-/three-glyph totals. With 30 plates at
 `1:1:1:2`, each glyph length receives `2/2/2/4` plates. The manifest re-audits
-every mapping, choice, split, margin, and mapping class before assets are used.
+every mapping, choice, split, margin, mapping class, and paired secondary-cue
+coverage distribution before assets are used.
 
 Registered participant names appear in a local selection bar, and a new name
 can be added without losing earlier participant-specific history. The selected

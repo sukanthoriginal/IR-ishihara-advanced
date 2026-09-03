@@ -1662,6 +1662,15 @@ async function recordChoice(choice, responsePosition, responseInputMethod) {
     condition_by_glyph_count_json: JSON.stringify(
       manifest.combinatorial_verification?.condition_by_glyph_count ?? null,
     ),
+    secondary_signal_matching_version: (
+      manifest.combinatorial_verification?.secondary_signal_matching?.version
+    ),
+    secondary_signal_matching_passed: (
+      manifest.combinatorial_verification?.secondary_signal_matching?.verified ? 1 : 0
+    ),
+    secondary_signal_matching_audit_json: JSON.stringify(
+      manifest.combinatorial_verification?.secondary_signal_matching ?? null,
+    ),
     difficulty_model_version: manifest.difficulty_model_version,
     condition: trial.condition,
     pair_id: trial.pair_id,
@@ -1677,6 +1686,18 @@ async function recordChoice(choice, responsePosition, responseInputMethod) {
     changed_count: stimulus.changed_count,
     mapping_class: stimulus.mapping_class,
     choice_rule: stimulus.choice_rule,
+    secondary_signal_profile_role: stimulus.secondary_signal_profile_role,
+    secondary_signal_glyph_count: stimulus.secondary_signal_glyph_count,
+    secondary_signal_glyph_ratio: stimulus.secondary_signal_glyph_ratio,
+    secondary_signal_position_indices_json: JSON.stringify(
+      stimulus.secondary_signal_position_indices ?? null,
+    ),
+    secondary_signal_reference_condition: (
+      stimulus.secondary_signal_reference_condition
+    ),
+    secondary_signal_distribution_source: (
+      stimulus.secondary_signal_distribution_source
+    ),
     glyph_count: stimulus.source_ids.length,
     transformation_signature: stimulus.transformation_signature,
     mapping_repetition_index: stimulus.mapping_repetition_index,
@@ -1701,6 +1722,7 @@ async function recordChoice(choice, responsePosition, responseInputMethod) {
     aligned_displacement_audio_pixels: trial.aligned_displacement_audio_pixels,
     aligned_displacement_plate_pixels: trial.aligned_displacement_plate_pixels,
     aligned_target_pixel_count: stimulus.aligned_target_pixel_count,
+    aligned_signal_base_pixel_count: stimulus.aligned_signal_base_pixel_count,
     canonical_target_pixel_count: stimulus.canonical_target_pixel_count,
     canonical_visual_dot_count: stimulus.canonical_visual_dot_count,
     aligned_visual_base_dot_count: stimulus.aligned_visual_base_dot_count,
@@ -1811,6 +1833,7 @@ async function recordChoice(choice, responsePosition, responseInputMethod) {
     aligned_carrier_occupancy_sha256: stimulus.aligned_carrier_occupancy_sha256,
     canonical_target_mask_sha256: stimulus.canonical_target_mask_sha256,
     aligned_target_mask_sha256: stimulus.aligned_target_mask_sha256,
+    aligned_signal_base_mask_sha256: stimulus.aligned_signal_base_mask_sha256,
     aligned_visual_base_mask_sha256: stimulus.aligned_visual_base_mask_sha256,
     aligned_visual_shifted_mask_sha256: stimulus.aligned_visual_shifted_mask_sha256,
     displayed_choice_order: currentAttempt.responseChoices.map(item => item.choice_id),
@@ -2267,8 +2290,8 @@ function humanCondition(condition) {
   if (manifest?.settings?.signalMode === 'mixed-aligned') {
     return {
       'visual_background_audio': 'RGB source + yellow missing strokes · neutral carrier',
-      'visual_aligned_overlay': 'Visual aligned + composite · neutral carrier',
-      'visual_aligned_ir_audio': 'Complete identity visual + shifted identical IR',
+      'visual_aligned_overlay': 'Complete identity + matched-coverage duplicate · neutral carrier',
+      'visual_aligned_ir_audio': 'Complete identity visual + matched-coverage shifted IR',
       'ir_audio': 'Changed source scaffold + complementary IR',
     }[condition] || condition;
   }
@@ -2279,7 +2302,7 @@ function humanCondition(condition) {
     'visual_aligned_silent': 'Visual aligned + composite (silent)',
     'visual_background_audio': 'Visual diagnostic + neutral carrier audio',
     'visual_aligned_overlay': 'Visual aligned + composite · neutral carrier',
-    'visual_aligned_ir_audio': 'Visual diagnostic + aligned full-target IR',
+    'visual_aligned_ir_audio': 'Visual diagnostic + aligned selected-position IR',
     'ir_audio': 'Source scaffold + IR diagnostic audio',
   }[condition] || condition;
 }
@@ -2321,10 +2344,16 @@ const CSV_COLUMNS = [
   'combinatorial_verification_version', 'combinatorial_verification_passed',
   'combinatorial_mapping_count', 'combinatorial_eligible_by_glyph_json',
   'condition_by_glyph_count_json',
+  'secondary_signal_matching_version', 'secondary_signal_matching_passed',
+  'secondary_signal_matching_audit_json',
   'difficulty_model_version',
   'condition', 'pair_id', 'pair_position', 'pair_order', 'pair_pass', 'pair_lag',
   'trial_index', 'stimulus_id', 'source_ids', 'target_ids', 'mapping_ids',
-  'changed_count', 'mapping_class', 'choice_rule', 'glyph_count', 'transformation_signature',
+  'changed_count', 'mapping_class', 'choice_rule',
+  'secondary_signal_profile_role', 'secondary_signal_glyph_count',
+  'secondary_signal_glyph_ratio', 'secondary_signal_position_indices_json',
+  'secondary_signal_reference_condition', 'secondary_signal_distribution_source',
+  'glyph_count', 'transformation_signature',
   'mapping_repetition_index', 'estimated_difficulty_score',
   'difficulty_rank', 'difficulty_stratum',
   'difficulty_glyph_load', 'difficulty_diagnostic_subtlety',
@@ -2335,7 +2364,7 @@ const CSV_COLUMNS = [
   'difficulty_match_score_gap', 'assigned_condition',
   'aligned_displacement_audio_dx', 'aligned_displacement_audio_dy',
   'aligned_displacement_audio_pixels', 'aligned_displacement_plate_pixels',
-  'aligned_target_pixel_count',
+  'aligned_target_pixel_count', 'aligned_signal_base_pixel_count',
   'canonical_target_pixel_count', 'canonical_visual_dot_count',
   'aligned_visual_base_dot_count', 'aligned_visual_shifted_dot_count',
   'aligned_visual_overlap_dot_count', 'alignment_equivalence_version',
@@ -2375,6 +2404,7 @@ const CSV_COLUMNS = [
   'balanced_carrier_occupancy_sha256', 'canonical_carrier_occupancy_sha256',
   'aligned_carrier_occupancy_sha256',
   'canonical_target_mask_sha256', 'aligned_target_mask_sha256',
+  'aligned_signal_base_mask_sha256',
   'aligned_visual_base_mask_sha256', 'aligned_visual_shifted_mask_sha256',
   'displayed_choice_order', 'displayed_choice_targets_json',
   'target_choice_id', 'decoy_choice_id',
@@ -2394,4 +2424,4 @@ const CSV_COLUMNS = [
   'fullscreen_at_onset', 'device_pixel_ratio', 'timestamp',
 ];
 
-document.documentElement.dataset.advancedIshiharaVersion = 'advanced-12';
+document.documentElement.dataset.advancedIshiharaVersion = 'advanced-13';

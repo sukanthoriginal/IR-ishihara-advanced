@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import hashlib
 import itertools
 import json
@@ -43,6 +44,7 @@ from shared.plate import (
     SOURCE_COLOURS,
     difference_mask,
     draw_geometry_mask,
+    draw_position_subset_mask,
     mask_digest,
     render_trial_images,
     segment_closure_relations,
@@ -63,9 +65,9 @@ from shared.soundscape import (
     wav_rms_int16,
 )
 
-SCHEMA_VERSION = 11
-RENDER_VERSION = 9
-AUDIO_RENDER_VERSION = 2
+SCHEMA_VERSION = 12
+RENDER_VERSION = 10
+AUDIO_RENDER_VERSION = 3
 DIFFICULTY_MODEL_VERSION = "estimated-v1"
 DIFFICULTY_COMPONENT_NAMES = (
     "glyph_load",
@@ -96,6 +98,11 @@ ALIGNED_COMPLEMENTARY_CONDITIONS = (
     "visual_background_audio",
     "ir_audio",
 )
+ALIGNED_SECONDARY_SIGNAL_REFERENCES = {
+    "visual_aligned_overlay": "visual_background_audio",
+    "visual_aligned_ir_audio": "ir_audio",
+}
+SECONDARY_SIGNAL_MATCHING_VERSION = "paired-condition-proportional-v1"
 VISUAL_ALIGNED_SILENT_CONDITION = "visual_aligned_silent"
 VISUAL_COMPLEMENTARY_SILENT_CONDITION = "visual_complementary_silent"
 VISUAL_COMPOSITE_CONDITIONS = (
@@ -472,6 +479,12 @@ def _plan_normalized_session(normalized: dict, grammar: dict) -> dict:
             foil_rng,
             [item["id"] for item in grammar["geometries"]],
         )
+        assign_secondary_signal_profiles(
+            base_specs,
+            random.Random(derive_seed(
+                normalized["seed"], "secondary-signal-matching-v1",
+            )),
+        )
         eligible_by_length = mixed_aligned_eligible_counts(
             grammar, normalized["split"],
         )
@@ -584,6 +597,12 @@ def prepare_session(
                         and assigned_condition == "visual_background_audio"
                     )
                 ),
+                aligned_signal_position_indices=(
+                    spec.get("secondarySignalPositionIndices")
+                    if normalized["signalMode"] == "mixed-aligned"
+                    and assigned_condition in ALIGNED_IDENTITY_CONDITIONS
+                    else None
+                ),
             )
             target_choice = next(
                 item for item in assets["choices"]
@@ -645,6 +664,32 @@ def prepare_session(
                 ),
                 "choice_rule": spec.get("choiceRule", "same-family-v1"),
                 **(
+                    {
+                        "secondary_signal_matching_version": spec[
+                            "secondarySignalMatchingVersion"
+                        ],
+                        "secondary_signal_profile_role": spec[
+                            "secondarySignalProfileRole"
+                        ],
+                        "secondary_signal_glyph_count": spec[
+                            "secondarySignalGlyphCount"
+                        ],
+                        "secondary_signal_glyph_ratio": spec[
+                            "secondarySignalGlyphRatio"
+                        ],
+                        "secondary_signal_position_indices": spec[
+                            "secondarySignalPositionIndices"
+                        ],
+                        "secondary_signal_reference_condition": spec[
+                            "secondarySignalReferenceCondition"
+                        ],
+                        "secondary_signal_distribution_source": spec[
+                            "secondarySignalDistributionSource"
+                        ],
+                    }
+                    if "secondarySignalMatchingVersion" in spec else {}
+                ),
+                **(
                     {"assigned_condition": assigned_condition}
                     if assigned_condition is not None else {}
                 ),
@@ -670,7 +715,7 @@ def prepare_session(
             for spec, stimulus in zip(base_specs, stimuli):
                 if spec["mappingClass"] == "identity":
                     spec["_renderedSignalDotCount"] = stimulus[
-                        "canonical_visual_dot_count"
+                        "aligned_visual_shifted_dot_count"
                     ]
             _balance_identity_signal_load(
                 base_specs,
@@ -679,6 +724,12 @@ def prepare_session(
             )
             for spec, stimulus in zip(base_specs, stimuli):
                 stimulus["assigned_condition"] = spec["assignedCondition"]
+                stimulus["secondary_signal_reference_condition"] = spec[
+                    "secondarySignalReferenceCondition"
+                ]
+                stimulus["secondary_signal_distribution_source"] = spec[
+                    "secondarySignalDistributionSource"
+                ]
                 stimulus["visible_signal_dot_count"] = stimulus[
                     "balanced_visual_source_dot_count"
                 ]
@@ -712,6 +763,11 @@ def prepare_session(
                 summarize_visible_signal_density(
                     stimuli, ALIGNED_MIXED_CONDITIONS,
                 )
+            )
+            mixed_balance["secondary_signal_matching"] = (
+                rendered_combinatorial_verification[
+                    "secondary_signal_matching"
+                ]
             )
         elif normalized["signalMode"] == "visual-aligned":
             assign_mixed_conditions(
@@ -755,7 +811,7 @@ def prepare_session(
                 if any(trial["condition"] == condition for trial in trials)
             },
             "comparison_design": (
-                "grammar-stratified-aligned-identities-vs-visual-and-ir-complements"
+                "grammar-stratified-identities-vs-complements-matched-secondary-coverage"
                 if normalized["signalMode"] == "mixed-aligned"
                 else "distinct-stimulus-carrier-controlled-between-condition"
                 if normalized["signalMode"] == "mixed"
@@ -769,12 +825,13 @@ def prepare_session(
             "condition_assignment": (
                 {
                     "method": (
-                        "exact-condition-glyph-density-apportionment-v4"
+                        "exact-margins-secondary-coverage-matching-v5"
                         if normalized["signalMode"] == "mixed-aligned"
                         else "provisional-structural-matching-v1"
                     ),
                     "matching_priority": (
-                        "exact condition and glyph margins; identity/change grammar class"
+                        "exact condition and glyph margins; identity/change grammar "
+                        "class; paired secondary-cue glyph coverage"
                         if normalized["signalMode"] == "mixed-aligned"
                         else "glyph count, difficulty stratum, changed count, score"
                     ),
@@ -1124,6 +1181,196 @@ def select_mixed_aligned_trials(
     return selected
 
 
+def _apportion_secondary_signal_counts(
+    slot_count: int,
+    reference_counts: dict[int, int],
+    rng: random.Random,
+) -> list[int]:
+    """Return a seeded largest-remainder sample of reference coverage counts."""
+    if slot_count < 0 or not reference_counts:
+        raise ValueError("secondary-signal apportionment inputs are invalid")
+    total = sum(reference_counts.values())
+    if total <= 0 or any(count <= 0 for count in reference_counts.values()):
+        raise ValueError("secondary-signal reference counts must be positive")
+    allocated = {
+        coverage: slot_count * count // total
+        for coverage, count in reference_counts.items()
+    }
+    remaining = slot_count - sum(allocated.values())
+    coverages = sorted(reference_counts)
+    tie_order = list(coverages)
+    rng.shuffle(tie_order)
+    tie_rank = {coverage: index for index, coverage in enumerate(tie_order)}
+    ranked = sorted(
+        coverages,
+        key=lambda coverage: (
+            -(slot_count * reference_counts[coverage] % total),
+            tie_rank[coverage],
+        ),
+    )
+    for coverage in ranked[:remaining]:
+        allocated[coverage] += 1
+    result = [
+        coverage
+        for coverage in coverages
+        for _index in range(allocated[coverage])
+    ]
+    rng.shuffle(result)
+    return result
+
+
+def _balanced_position_subsets(
+    glyph_count: int,
+    coverage_counts: list[int],
+    rng: random.Random,
+) -> list[tuple[int, ...]]:
+    """Choose subsets while keeping positional participation nearly uniform."""
+    loads = [0] * glyph_count
+    subsets = []
+    for coverage in coverage_counts:
+        candidates = list(itertools.combinations(range(glyph_count), coverage))
+        tie_order = list(candidates)
+        rng.shuffle(tie_order)
+        tie_rank = {candidate: index for index, candidate in enumerate(tie_order)}
+
+        def objective(candidate: tuple[int, ...]) -> tuple[int, int, int]:
+            trial_loads = [
+                load + (position in candidate)
+                for position, load in enumerate(loads)
+            ]
+            return (
+                max(trial_loads) - min(trial_loads),
+                sum(load * load for load in trial_loads),
+                tie_rank[candidate],
+            )
+
+        chosen = min(candidates, key=objective)
+        for position in chosen:
+            loads[position] += 1
+        subsets.append(chosen)
+    if loads and max(loads) - min(loads) > 1:
+        raise RuntimeError("could not balance secondary-signal positions")
+    return subsets
+
+
+def _secondary_signal_reference_counts(
+    specs: list[dict],
+    aligned_condition: str,
+    glyph_count: int,
+) -> tuple[dict[int, int], str]:
+    reference_condition = ALIGNED_SECONDARY_SIGNAL_REFERENCES[aligned_condition]
+    paired = Counter(
+        spec["secondarySignalGlyphCount"]
+        for spec in specs
+        if spec["assignedCondition"] == reference_condition
+        and len(spec["sourceIds"]) == glyph_count
+    )
+    if paired:
+        return dict(paired), "paired-condition"
+    pooled = Counter(
+        spec["secondarySignalGlyphCount"]
+        for spec in specs
+        if spec["assignedCondition"] in ALIGNED_COMPLEMENTARY_CONDITIONS
+        and len(spec["sourceIds"]) == glyph_count
+    )
+    if pooled:
+        return dict(pooled), "pooled-complementary-glyph"
+    return {coverage: 1 for coverage in range(1, glyph_count + 1)}, (
+        "uniform-nonzero-fallback"
+    )
+
+
+def _refresh_secondary_signal_profile_references(specs: list[dict]) -> None:
+    """Refresh condition-derived annotations without changing any profile."""
+    for spec in specs:
+        if spec.get("mappingClass") != "identity":
+            continue
+        condition = spec["assignedCondition"]
+        _counts, source = _secondary_signal_reference_counts(
+            specs, condition, len(spec["sourceIds"]),
+        )
+        spec["secondarySignalReferenceCondition"] = (
+            ALIGNED_SECONDARY_SIGNAL_REFERENCES[condition]
+        )
+        spec["secondarySignalDistributionSource"] = source
+
+
+def assign_secondary_signal_profiles(
+    specs: list[dict],
+    rng: random.Random,
+) -> None:
+    """Match aligned redundant-cue coverage to its complementary condition.
+
+    This pass only annotates the already selected specifications. It never
+    changes their sources, targets, mappings, choices, signatures, repetition
+    indices, condition labels, or condition × glyph margins.
+    """
+    for spec in specs:
+        if spec["mappingClass"] != "changed":
+            continue
+        positions = tuple(
+            index
+            for index, (source_id, target_id) in enumerate(zip(
+                spec["sourceIds"], spec["targetIds"],
+            ))
+            if source_id != target_id
+        )
+        glyph_count = len(spec["sourceIds"])
+        if len(positions) != spec["changedCount"] or not positions:
+            raise RuntimeError("complementary coverage differs from changed positions")
+        spec.update({
+            "secondarySignalMatchingVersion": SECONDARY_SIGNAL_MATCHING_VERSION,
+            "secondarySignalProfileRole": "observed-complement",
+            "secondarySignalGlyphCount": len(positions),
+            "secondarySignalGlyphRatio": f"{len(positions)}/{glyph_count}",
+            "secondarySignalPositionIndices": list(positions),
+            "secondarySignalReferenceCondition": spec["assignedCondition"],
+            "secondarySignalDistributionSource": "observed-changed-positions",
+        })
+
+    for aligned_condition in ALIGNED_IDENTITY_CONDITIONS:
+        for glyph_count in (1, 2, 3):
+            aligned_specs = [
+                spec for spec in specs
+                if spec["mappingClass"] == "identity"
+                and spec["assignedCondition"] == aligned_condition
+                and len(spec["sourceIds"]) == glyph_count
+            ]
+            if not aligned_specs:
+                continue
+            reference_counts, source = _secondary_signal_reference_counts(
+                specs, aligned_condition, glyph_count,
+            )
+            coverage_counts = _apportion_secondary_signal_counts(
+                len(aligned_specs), reference_counts, rng,
+            )
+            position_subsets = _balanced_position_subsets(
+                glyph_count, coverage_counts, rng,
+            )
+            randomized_specs = list(aligned_specs)
+            rng.shuffle(randomized_specs)
+            for spec, positions in zip(randomized_specs, position_subsets):
+                coverage = len(positions)
+                spec.update({
+                    "secondarySignalMatchingVersion": (
+                        SECONDARY_SIGNAL_MATCHING_VERSION
+                    ),
+                    "secondarySignalProfileRole": "matched-aligned",
+                    "secondarySignalGlyphCount": coverage,
+                    "secondarySignalGlyphRatio": f"{coverage}/{glyph_count}",
+                    "secondarySignalPositionIndices": list(positions),
+                    "secondarySignalReferenceCondition": (
+                        ALIGNED_SECONDARY_SIGNAL_REFERENCES[aligned_condition]
+                    ),
+                    "secondarySignalDistributionSource": source,
+                })
+
+
+def _secondary_signal_profile_key(spec: dict) -> tuple[int, ...] | None:
+    positions = spec.get("secondarySignalPositionIndices")
+    return tuple(positions) if positions is not None else None
+
+
 def _identity_signal_pixel_count(spec: dict) -> int:
     """Return rendered signal dots when known, otherwise canonical mask pixels."""
     rendered_count = spec.get("_renderedSignalDotCount")
@@ -1162,6 +1409,8 @@ def _balance_identity_signal_load(
     identity-condition labels are reassigned within glyph count. A largest-first
     constrained pass is followed by improving pair swaps, so no legal
     same-glyph swap can further reduce the per-condition raster-load spread.
+    Once secondary-signal profiles exist, their per-condition distributions are
+    frozen: only profiles with the same position subset may exchange labels.
     """
     for glyph_count in (1, 2, 3):
         candidates = [
@@ -1175,29 +1424,53 @@ def _balance_identity_signal_load(
         }
         if len(candidates) != sum(quotas.values()):
             raise RuntimeError("identity density-balancing margins are inconsistent")
-        loads = {condition: 0 for condition in ALIGNED_IDENTITY_CONDITIONS}
-        remaining = dict(quotas)
-        randomized = [(rng.random(), spec) for spec in candidates]
-        randomized.sort(
-            key=lambda item: (-_identity_signal_pixel_count(item[1]), item[0])
-        )
-        for _tie_breaker, spec in randomized:
-            load = _identity_signal_pixel_count(spec)
-            eligible = [
-                condition for condition in ALIGNED_IDENTITY_CONDITIONS
-                if remaining[condition] > 0
-            ]
-            condition = min(
-                eligible,
-                key=lambda item: (
-                    (loads[item] + load) / quotas[item],
-                    loads[item] / quotas[item],
-                    item,
-                ),
+        profile_keys = [_secondary_signal_profile_key(spec) for spec in candidates]
+        profiles_present = all(key is not None for key in profile_keys)
+        if profiles_present:
+            observed = {
+                condition: sum(
+                    spec["assignedCondition"] == condition for spec in candidates
+                )
+                for condition in ALIGNED_IDENTITY_CONDITIONS
+            }
+            if observed != quotas:
+                raise RuntimeError(
+                    "profile-preserving identity margins are inconsistent"
+                )
+            loads = {
+                condition: sum(
+                    _identity_signal_pixel_count(spec)
+                    for spec in candidates
+                    if spec["assignedCondition"] == condition
+                )
+                for condition in ALIGNED_IDENTITY_CONDITIONS
+            }
+        elif any(key is not None for key in profile_keys):
+            raise RuntimeError("identity secondary-signal profiles are incomplete")
+        else:
+            loads = {condition: 0 for condition in ALIGNED_IDENTITY_CONDITIONS}
+            remaining = dict(quotas)
+            randomized = [(rng.random(), spec) for spec in candidates]
+            randomized.sort(
+                key=lambda item: (-_identity_signal_pixel_count(item[1]), item[0])
             )
-            spec["assignedCondition"] = condition
-            loads[condition] += load
-            remaining[condition] -= 1
+            for _tie_breaker, spec in randomized:
+                load = _identity_signal_pixel_count(spec)
+                eligible = [
+                    condition for condition in ALIGNED_IDENTITY_CONDITIONS
+                    if remaining[condition] > 0
+                ]
+                condition = min(
+                    eligible,
+                    key=lambda item: (
+                        (loads[item] + load) / quotas[item],
+                        loads[item] / quotas[item],
+                        item,
+                    ),
+                )
+                spec["assignedCondition"] = condition
+                loads[condition] += load
+                remaining[condition] -= 1
 
         while True:
             current = _identity_load_objective(loads, quotas)
@@ -1209,6 +1482,12 @@ def _balance_identity_signal_load(
                 for right in candidates[left_index + 1:]:
                     right_condition = right["assignedCondition"]
                     if left_condition == right_condition:
+                        continue
+                    if (
+                        profiles_present
+                        and _secondary_signal_profile_key(left)
+                        != _secondary_signal_profile_key(right)
+                    ):
                         continue
                     right_load = _identity_signal_pixel_count(right)
                     trial_loads = dict(loads)
@@ -1232,6 +1511,12 @@ def _balance_identity_signal_load(
             right["assignedCondition"] = left_condition
             loads[left_condition] += right_load - left_load
             loads[right_condition] += left_load - right_load
+
+    if any(
+        _secondary_signal_profile_key(spec) is not None
+        for spec in specs if spec.get("mappingClass") == "identity"
+    ):
+        _refresh_secondary_signal_profile_references(specs)
 
 
 def _verify_identity_signal_balance(
@@ -1267,6 +1552,12 @@ def _verify_identity_signal_balance(
             for right in candidates[left_index + 1:]:
                 right_condition = right["assignedCondition"]
                 if left_condition == right_condition:
+                    continue
+                if (
+                    _secondary_signal_profile_key(left) is not None
+                    and _secondary_signal_profile_key(left)
+                    != _secondary_signal_profile_key(right)
+                ):
                     continue
                 right_load = _identity_signal_pixel_count(right)
                 trial_loads = dict(loads)
@@ -1375,6 +1666,220 @@ def choose_mixed_aligned_interpretations(
     return [list(item) for item in interpretations]
 
 
+def _verify_secondary_signal_profiles(specs: list[dict]) -> dict:
+    """Verify matched glyph participation without inspecting mapping selection."""
+    for spec in specs:
+        glyph_count = len(spec["sourceIds"])
+        positions = spec.get("secondarySignalPositionIndices")
+        coverage = spec.get("secondarySignalGlyphCount")
+        if (
+            spec.get("secondarySignalMatchingVersion")
+            != SECONDARY_SIGNAL_MATCHING_VERSION
+            or not isinstance(positions, list)
+            or positions != sorted(set(positions))
+            or any(
+                isinstance(position, bool)
+                or not isinstance(position, int)
+                or position < 0
+                or position >= glyph_count
+                for position in positions
+            )
+            or not isinstance(coverage, int)
+            or isinstance(coverage, bool)
+            or coverage != len(positions)
+            or not 1 <= coverage <= glyph_count
+            or spec.get("secondarySignalGlyphRatio")
+            != f"{coverage}/{glyph_count}"
+        ):
+            raise RuntimeError("secondary-signal profile is invalid")
+        if spec["mappingClass"] == "changed":
+            changed_positions = [
+                index
+                for index, (source_id, target_id) in enumerate(zip(
+                    spec["sourceIds"], spec["targetIds"],
+                ))
+                if source_id != target_id
+            ]
+            if (
+                positions != changed_positions
+                or coverage != spec["changedCount"]
+                or spec.get("secondarySignalProfileRole")
+                != "observed-complement"
+                or spec.get("secondarySignalReferenceCondition")
+                != spec["assignedCondition"]
+                or spec.get("secondarySignalDistributionSource")
+                != "observed-changed-positions"
+            ):
+                raise RuntimeError(
+                    "complementary secondary signal must equal changed positions"
+                )
+        elif spec["mappingClass"] == "identity":
+            condition = spec["assignedCondition"]
+            if (
+                condition not in ALIGNED_IDENTITY_CONDITIONS
+                or spec.get("secondarySignalProfileRole") != "matched-aligned"
+                or spec.get("secondarySignalReferenceCondition")
+                != ALIGNED_SECONDARY_SIGNAL_REFERENCES[condition]
+            ):
+                raise RuntimeError("aligned secondary-signal profile is invalid")
+        else:
+            raise RuntimeError("unknown aligned-mixed mapping class")
+
+    condition_distributions = {
+        condition: {
+            str(glyph_count): {
+                str(coverage): count
+                for coverage, count in sorted(Counter(
+                    spec["secondarySignalGlyphCount"]
+                    for spec in specs
+                    if spec["assignedCondition"] == condition
+                    and len(spec["sourceIds"]) == glyph_count
+                ).items())
+            }
+            for glyph_count in (1, 2, 3)
+        }
+        for condition in ALIGNED_MIXED_CONDITIONS
+    }
+    pairings = {}
+    for aligned_condition in ALIGNED_IDENTITY_CONDITIONS:
+        reference_condition = ALIGNED_SECONDARY_SIGNAL_REFERENCES[
+            aligned_condition
+        ]
+        by_glyph = {}
+        for glyph_count in (1, 2, 3):
+            aligned_specs = [
+                spec for spec in specs
+                if spec["assignedCondition"] == aligned_condition
+                and len(spec["sourceIds"]) == glyph_count
+            ]
+            reference_counts, source = _secondary_signal_reference_counts(
+                specs, aligned_condition, glyph_count,
+            )
+            if any(
+                spec.get("secondarySignalDistributionSource") != source
+                for spec in aligned_specs
+            ):
+                raise RuntimeError(
+                    "aligned secondary-signal reference annotation is stale"
+                )
+            actual = Counter(
+                spec["secondarySignalGlyphCount"] for spec in aligned_specs
+            )
+            reference_total = sum(reference_counts.values())
+            aligned_total = len(aligned_specs)
+            maximum_error = 0.0
+            rounded_up_remainders = []
+            rounded_down_remainders = []
+            for coverage in range(1, glyph_count + 1):
+                weight = reference_counts.get(coverage, 0)
+                numerator = aligned_total * weight
+                lower = numerator // reference_total
+                upper = (numerator + reference_total - 1) // reference_total
+                observed = actual.get(coverage, 0)
+                if not lower <= observed <= upper:
+                    raise RuntimeError(
+                        "aligned secondary-signal distribution is not proportional"
+                    )
+                remainder = numerator % reference_total
+                if observed > lower:
+                    rounded_up_remainders.append(remainder)
+                elif remainder:
+                    rounded_down_remainders.append(remainder)
+                maximum_error = max(
+                    maximum_error,
+                    abs(observed - numerator / reference_total),
+                )
+            if (
+                rounded_up_remainders
+                and rounded_down_remainders
+                and min(rounded_up_remainders) < max(rounded_down_remainders)
+            ):
+                raise RuntimeError(
+                    "aligned secondary-signal allocation violates largest remainder"
+                )
+            position_loads = [
+                sum(
+                    position in spec["secondarySignalPositionIndices"]
+                    for spec in aligned_specs
+                )
+                for position in range(glyph_count)
+            ]
+            position_spread = (
+                max(position_loads) - min(position_loads)
+                if position_loads else 0
+            )
+            if position_spread > 1:
+                raise RuntimeError(
+                    "aligned secondary-signal positions are not balanced"
+                )
+            by_glyph[str(glyph_count)] = {
+                "aligned_trial_count": aligned_total,
+                "reference_trial_count": (
+                    sum(
+                        spec["assignedCondition"] == reference_condition
+                        and len(spec["sourceIds"]) == glyph_count
+                        for spec in specs
+                    )
+                ),
+                "reference_distribution": {
+                    str(key): value
+                    for key, value in sorted(reference_counts.items())
+                },
+                "aligned_distribution": {
+                    str(key): value for key, value in sorted(actual.items())
+                },
+                "distribution_source": source,
+                "maximum_apportionment_error_trials": round(maximum_error, 6),
+                "aligned_position_loads": position_loads,
+                "aligned_position_load_spread": position_spread,
+            }
+        pairings[aligned_condition] = {
+            "reference_condition": reference_condition,
+            "by_glyph_count": by_glyph,
+        }
+    return {
+        "verified": True,
+        "version": SECONDARY_SIGNAL_MATCHING_VERSION,
+        "unit": "glyph-position participation",
+        "position_index_base": 0,
+        "allocation": "seeded largest remainder within condition and glyph count",
+        "condition_distributions": condition_distributions,
+        "aligned_reference_pairs": pairings,
+    }
+
+
+def _secondary_signal_spec_from_stimulus(stimulus: dict) -> dict:
+    """Project persisted snake-case profile fields back into verifier form."""
+    return {
+        "sourceIds": stimulus.get("source_ids"),
+        "targetIds": stimulus.get("target_ids"),
+        "changedCount": stimulus.get("changed_count"),
+        "mappingClass": stimulus.get("mapping_class"),
+        "assignedCondition": stimulus.get("assigned_condition"),
+        "secondarySignalMatchingVersion": stimulus.get(
+            "secondary_signal_matching_version"
+        ),
+        "secondarySignalProfileRole": stimulus.get(
+            "secondary_signal_profile_role"
+        ),
+        "secondarySignalGlyphCount": stimulus.get(
+            "secondary_signal_glyph_count"
+        ),
+        "secondarySignalGlyphRatio": stimulus.get(
+            "secondary_signal_glyph_ratio"
+        ),
+        "secondarySignalPositionIndices": stimulus.get(
+            "secondary_signal_position_indices"
+        ),
+        "secondarySignalReferenceCondition": stimulus.get(
+            "secondary_signal_reference_condition"
+        ),
+        "secondarySignalDistributionSource": stimulus.get(
+            "secondary_signal_distribution_source"
+        ),
+    }
+
+
 def verify_mixed_aligned_specifications(
     specs: list[dict],
     grammar: dict,
@@ -1414,6 +1919,7 @@ def verify_mixed_aligned_specifications(
     identity_density_balance = _verify_identity_signal_balance(
         specs, condition_glyph_quotas,
     )
+    secondary_signal_matching = _verify_secondary_signal_profiles(specs)
 
     for spec in specs:
         condition = spec["assignedCondition"]
@@ -1467,7 +1973,7 @@ def verify_mixed_aligned_specifications(
     }
     return {
         "verified": True,
-        "version": "split-local-identity-change-density-laws-v3",
+        "version": "split-local-identity-change-density-coverage-laws-v4",
         "split": split,
         "source_family_count": identity_count,
         "mapping_count": mapping_count,
@@ -1494,6 +2000,7 @@ def verify_mixed_aligned_specifications(
             for condition in ALIGNED_MIXED_CONDITIONS
         },
         "identity_density_balance": identity_density_balance,
+        "secondary_signal_matching": secondary_signal_matching,
         "laws": {
             "identity": "source_id == target_id at every position",
             "changed": "at least one canonical addition-only mapping",
@@ -1503,7 +2010,14 @@ def verify_mixed_aligned_specifications(
             "total": "mapping_count ** glyph_count",
             "split": "every source family belongs to the selected split",
             "identity_density": (
-                "canonical mask-pixel load is a same-glyph pair-swap local optimum"
+                "rendered redundant-cue dot load, or canonical mask load before "
+                "rendering, is a profile-preserving same-glyph pair-swap local "
+                "optimum"
+            ),
+            "secondary_signal_coverage": (
+                "aligned redundant-cue glyph participation is proportionally "
+                "apportioned from its paired complementary condition within "
+                "glyph count"
             ),
         },
     }
@@ -1911,7 +2425,7 @@ def generate_aligned_target_audio_assets(
     stem: str,
     raspivoice_bin: Path,
 ) -> dict:
-    """Render a shifted full-target probe and its carrier reference."""
+    """Render a shifted selected-position probe and its carrier reference."""
     audio_dir = build_root / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
     aligned_path = audio_dir / f"{stem}_aligned_target.wav"
@@ -2497,7 +3011,7 @@ def trial_record(
     elif condition == "visual_aligned_ir_audio":
         plate = stimulus["canonical_visual_plate_png"]
         wav = stimulus["aligned_target_wav"]
-        audio_content = "shifted-full-target-ir-plus-background-carrier"
+        audio_content = "shifted-selected-target-ir-plus-background-carrier"
     elif condition == VISUAL_COMPOSITE_CONDITIONS[0]:
         plate = stimulus["visual_complementary_plate_png"]
         wav = None
@@ -2539,6 +3053,27 @@ def trial_record(
         "difficulty_match_score_gap": stimulus.get("difficulty_match_score_gap"),
         "mapping_class": stimulus.get("mapping_class"),
         "choice_rule": stimulus.get("choice_rule"),
+        "secondary_signal_matching_version": stimulus.get(
+            "secondary_signal_matching_version"
+        ),
+        "secondary_signal_profile_role": stimulus.get(
+            "secondary_signal_profile_role"
+        ),
+        "secondary_signal_glyph_count": stimulus.get(
+            "secondary_signal_glyph_count"
+        ),
+        "secondary_signal_glyph_ratio": stimulus.get(
+            "secondary_signal_glyph_ratio"
+        ),
+        "secondary_signal_position_indices": stimulus.get(
+            "secondary_signal_position_indices"
+        ),
+        "secondary_signal_reference_condition": stimulus.get(
+            "secondary_signal_reference_condition"
+        ),
+        "secondary_signal_distribution_source": stimulus.get(
+            "secondary_signal_distribution_source"
+        ),
     }
     if "aligned_displacement_audio_pixels" in stimulus:
         record.update({
@@ -2591,6 +3126,24 @@ def manifest_is_complete(manifest: dict, root: Path) -> bool:
             not isinstance(density_balance, dict)
             or density_balance.get("verified") is not True
             or density_balance.get("load_basis") != "rendered_signal_dot_count"
+        ):
+            return False
+        secondary_matching = verification.get("secondary_signal_matching")
+        try:
+            expected_secondary_matching = _verify_secondary_signal_profiles([
+                _secondary_signal_spec_from_stimulus(stimulus)
+                for stimulus in manifest.get("stimuli", [])
+            ])
+        except (KeyError, TypeError, ValueError, RuntimeError):
+            return False
+        if (
+            secondary_matching != expected_secondary_matching
+            or secondary_matching.get("verified") is not True
+            or secondary_matching.get("version")
+            != SECONDARY_SIGNAL_MATCHING_VERSION
+            or manifest.get("condition_assignment", {}).get(
+                "secondary_signal_matching"
+            ) != expected_secondary_matching
         ):
             return False
         verified_counts = {
@@ -2856,7 +3409,7 @@ def manifest_is_complete(manifest: dict, root: Path) -> bool:
                 return False
             if (
                 stimulus.get("alignment_equivalence_version")
-                != "canonical-target-mask-v1"
+                != "selected-target-position-redundancy-v2"
                 or stimulus.get("aligned_visual_base_channel_position")
                 != "seeded-diagonal-a"
                 or stimulus.get("aligned_visual_shifted_channel_position")
@@ -2869,14 +3422,20 @@ def manifest_is_complete(manifest: dict, root: Path) -> bool:
                 != stimulus.get("aligned_visual_base_dot_count")
                 or stimulus.get("canonical_visual_dot_count")
                 != stimulus.get("visible_signal_dot_count")
-                or stimulus.get("aligned_visual_base_dot_count")
-                != stimulus.get("aligned_visual_shifted_dot_count")
-                or stimulus.get("aligned_visual_base_radius_histogram")
-                != stimulus.get("aligned_visual_shifted_radius_histogram")
-                or stimulus.get("aligned_visual_base_radius_area_units")
-                != stimulus.get("aligned_visual_shifted_radius_area_units")
-                or stimulus.get("aligned_visual_base_active_pixel_count")
-                != stimulus.get("aligned_visual_shifted_active_pixel_count")
+                or not 0 < stimulus.get("aligned_visual_shifted_dot_count", 0)
+                <= stimulus.get("aligned_visual_base_dot_count", 0)
+                or not isinstance(
+                    stimulus.get("aligned_visual_shifted_radius_histogram"), dict,
+                )
+                or sum(
+                    stimulus.get("aligned_visual_shifted_radius_histogram", {}).values()
+                ) != stimulus.get("aligned_visual_shifted_dot_count")
+                or not 0 < stimulus.get(
+                    "aligned_visual_shifted_radius_area_units", 0,
+                ) <= stimulus.get("aligned_visual_base_radius_area_units", 0)
+                or not 0 < stimulus.get(
+                    "aligned_visual_shifted_active_pixel_count", 0,
+                ) <= stimulus.get("aligned_visual_base_active_pixel_count", 0)
                 or stimulus.get("canonical_carrier_occupancy_sha256")
                 != stimulus.get("aligned_carrier_occupancy_sha256")
                 or stimulus.get("canonical_carrier_occupancy_sha256")
@@ -2885,14 +3444,22 @@ def manifest_is_complete(manifest: dict, root: Path) -> bool:
                 != stimulus.get("aligned_visual_base_mask_sha256")
                 or stimulus.get("aligned_target_mask_sha256")
                 != stimulus.get("aligned_visual_shifted_mask_sha256")
-                or stimulus.get("canonical_target_pixel_count")
+                or stimulus.get("aligned_signal_base_pixel_count")
                 != stimulus.get("aligned_target_pixel_count")
             ):
                 return False
             try:
                 canonical_mask = draw_geometry_mask(stimulus["target_ids"])
+                selected_positions = (
+                    stimulus.get("secondary_signal_position_indices")
+                    if signal_mode == "mixed-aligned"
+                    else list(range(len(stimulus["target_ids"])))
+                )
+                selected_mask = draw_position_subset_mask(
+                    stimulus["target_ids"], selected_positions,
+                )
                 shifted_mask = translate_mask_without_clipping(
-                    canonical_mask,
+                    selected_mask,
                     stimulus.get("aligned_displacement_audio_dx"),
                     stimulus.get("aligned_displacement_audio_dy"),
                 )
@@ -2901,12 +3468,18 @@ def manifest_is_complete(manifest: dict, root: Path) -> bool:
             if (
                 stimulus.get("canonical_target_mask_sha256")
                 != mask_digest(canonical_mask)
+                or stimulus.get("aligned_visual_base_mask_sha256")
+                != mask_digest(canonical_mask)
+                or stimulus.get("aligned_signal_base_mask_sha256")
+                != mask_digest(selected_mask)
                 or stimulus.get("aligned_target_mask_sha256")
                 != mask_digest(shifted_mask)
                 or stimulus.get("canonical_target_pixel_count")
                 != sum(pixel > 0 for pixel in canonical_mask.tobytes())
                 or stimulus.get("aligned_target_pixel_count")
                 != sum(pixel > 0 for pixel in shifted_mask.tobytes())
+                or stimulus.get("aligned_signal_base_pixel_count")
+                != sum(pixel > 0 for pixel in selected_mask.tobytes())
             ):
                 return False
             try:

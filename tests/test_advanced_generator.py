@@ -747,6 +747,70 @@ class AdvancedGeneratorTests(unittest.TestCase):
                 list(ALIGNED_VISUAL_COPY_COLOUR),
             )
 
+    def test_aligned_renderer_limits_secondary_cue_to_selected_glyph_positions(self):
+        target_ids = ["c", "e", "u"]
+        choices = [
+            target_ids,
+            ["zero-o", "e", "u"],
+            ["c", "f", "u"],
+            ["c", "e", "q"],
+        ]
+        selected_positions = [1]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            assets = render_trial_images(
+                target_ids,
+                target_ids,
+                choices,
+                root,
+                "partial-aligned",
+                seed=24,
+                include_aligned_assets=True,
+                aligned_signal_position_indices=selected_positions,
+            )
+            selected_mask = plate_renderer.draw_position_subset_mask(
+                target_ids, selected_positions,
+            )
+            shifted_mask = plate_renderer.translate_mask_without_clipping(
+                selected_mask,
+                assets["aligned_displacement_audio_dx"],
+                assets["aligned_displacement_audio_dy"],
+            )
+            self.assertEqual(
+                assets["alignment_equivalence_version"],
+                "selected-target-position-redundancy-v2",
+            )
+            self.assertEqual(
+                assets["aligned_signal_base_mask_sha256"],
+                plate_renderer.mask_digest(selected_mask),
+            )
+            self.assertEqual(
+                assets["aligned_target_mask_sha256"],
+                plate_renderer.mask_digest(shifted_mask),
+            )
+            self.assertEqual(
+                assets["aligned_signal_base_pixel_count"],
+                assets["aligned_target_pixel_count"],
+            )
+            self.assertLess(
+                assets["aligned_target_pixel_count"],
+                assets["canonical_target_pixel_count"],
+            )
+            self.assertLess(
+                assets["aligned_visual_shifted_dot_count"],
+                assets["aligned_visual_base_dot_count"],
+            )
+            aligned_input = np.asarray(Image.open(
+                root / assets["aligned_input_png"],
+            ))
+            background = np.asarray(Image.open(
+                root / assets["background_input_png"],
+            ))
+            self.assertEqual(
+                np.count_nonzero(aligned_input != background),
+                assets["aligned_target_pixel_count"],
+            )
+
     def test_aligned_visual_uses_bijective_complete_subdots_with_exact_density(self):
         dots = plate_renderer.make_aligned_dot_layout()
         target = plate_renderer.draw_geometry_mask(["zero-o"])
@@ -984,8 +1048,34 @@ class AdvancedGeneratorTests(unittest.TestCase):
             plan["combinatorial_verification"]["eligible_by_glyph_count"]["1"],
             {"identity": 6, "changed": 24, "total": 30},
         )
+        secondary_audit = plan["combinatorial_verification"][
+            "secondary_signal_matching"
+        ]
+        self.assertTrue(secondary_audit["verified"])
+        self.assertEqual(
+            secondary_audit["version"],
+            generator.SECONDARY_SIGNAL_MATCHING_VERSION,
+        )
+        self.assertEqual(
+            secondary_audit["aligned_reference_pairs"]
+            ["visual_aligned_overlay"]["reference_condition"],
+            "visual_background_audio",
+        )
+        self.assertEqual(
+            secondary_audit["aligned_reference_pairs"]
+            ["visual_aligned_ir_audio"]["reference_condition"],
+            "ir_audio",
+        )
         one_glyph_identities = []
         for spec in plan["base_specs"]:
+            positions = spec["secondarySignalPositionIndices"]
+            self.assertEqual(
+                spec["secondarySignalGlyphCount"], len(positions),
+            )
+            self.assertEqual(
+                spec["secondarySignalGlyphRatio"],
+                f"{len(positions)}/{len(spec['sourceIds'])}",
+            )
             if spec["assignedCondition"] in generator.ALIGNED_IDENTITY_CONDITIONS:
                 self.assertEqual(spec["mappingClass"], "identity")
                 self.assertEqual(spec["changedCount"], 0)
@@ -995,6 +1085,13 @@ class AdvancedGeneratorTests(unittest.TestCase):
             else:
                 self.assertEqual(spec["mappingClass"], "changed")
                 self.assertGreaterEqual(spec["changedCount"], 1)
+                self.assertEqual(positions, [
+                    index
+                    for index, (source_id, target_id) in enumerate(zip(
+                        spec["sourceIds"], spec["targetIds"],
+                    ))
+                    if source_id != target_id
+                ])
             self.assertEqual(len({tuple(item) for item in spec["choiceTargets"]}), 4)
         self.assertEqual(len(one_glyph_identities), 4)
         self.assertEqual(len(set(one_glyph_identities)), 4)
@@ -1005,6 +1102,117 @@ class AdvancedGeneratorTests(unittest.TestCase):
             len({item["transformationSignature"] for item in plan["base_specs"]}),
             30,
         )
+
+    def test_secondary_signal_annotation_does_not_perturb_core_combinatorics(self):
+        settings = {
+            "split": "test",
+            "signalMode": "mixed-aligned",
+            "baseStimulusCount": 30,
+            "mixedConditionRatio": "1:1:1:2",
+            "seed": 1729,
+        }
+        normalized = generator.normalize_settings(settings)
+        condition_quotas = generator.weighted_condition_quotas(
+            normalized["baseStimulusCount"],
+            tuple(normalized["mixedConditionWeights"]),
+            normalized["seed"],
+        )
+        glyph_quotas = generator.glyph_count_quotas(
+            normalized["baseStimulusCount"],
+            normalized["glyphComposition"],
+            normalized["seed"],
+        )
+        condition_glyph_quotas = generator.condition_glyph_quota_matrix(
+            condition_quotas, glyph_quotas, normalized["seed"],
+        )
+        families = [
+            family for family in self.grammar["sourceFamilies"]
+            if family["split"] == normalized["split"]
+        ]
+        unannotated = generator.select_mixed_aligned_trials(
+            families,
+            condition_glyph_quotas,
+            random.Random(generator.derive_seed(
+                normalized["seed"], "selection-v1",
+            )),
+            random.Random(generator.derive_seed(
+                normalized["seed"], "foils-v1",
+            )),
+            [item["id"] for item in self.grammar["geometries"]],
+        )
+        annotated = generator.plan_session(
+            settings, grammar=self.grammar,
+        )["base_specs"]
+        core_fields = (
+            "sourceIds", "targetIds", "mappingIds", "changedCount",
+            "choiceTargets", "transformationSignature",
+            "mappingRepetitionIndex", "assignedCondition", "mappingClass",
+            "choiceRule",
+        )
+        self.assertEqual(
+            [
+                {field: spec[field] for field in core_fields}
+                for spec in annotated
+            ],
+            [
+                {field: spec[field] for field in core_fields}
+                for spec in unannotated
+            ],
+        )
+
+    @patch.object(generator, "generate_soundscape")
+    def test_four_way_session_renders_and_validates_partial_matched_profiles(
+        self, generate,
+    ):
+        generate.side_effect = self._write_fake_soundscape
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manifest_path, manifest = generator.prepare_session({
+                "split": "test",
+                "signalMode": "mixed-aligned",
+                "baseStimulusCount": 20,
+                "glyphComposition": "automatic",
+                "progression": "glyph-growing",
+                "feedbackEnabled": False,
+                "mixedConditionRatio": "1:1:1:2",
+                "seed": 1729,
+            }, Path(temp_dir))
+            aligned = [
+                stimulus for stimulus in manifest["stimuli"]
+                if stimulus["assigned_condition"]
+                in generator.ALIGNED_IDENTITY_CONDITIONS
+            ]
+            partial = [
+                stimulus for stimulus in aligned
+                if stimulus["secondary_signal_glyph_count"]
+                < len(stimulus["source_ids"])
+            ]
+            self.assertTrue(partial)
+            for stimulus in aligned:
+                selected_mask = plate_renderer.draw_position_subset_mask(
+                    stimulus["target_ids"],
+                    stimulus["secondary_signal_position_indices"],
+                )
+                self.assertEqual(
+                    stimulus["aligned_signal_base_mask_sha256"],
+                    plate_renderer.mask_digest(selected_mask),
+                )
+                self.assertEqual(
+                    stimulus["secondary_signal_reference_condition"],
+                    generator.ALIGNED_SECONDARY_SIGNAL_REFERENCES[
+                        stimulus["assigned_condition"]
+                    ],
+                )
+            aligned_ir_trial = next(
+                trial for trial in manifest["trials"]
+                if trial["condition"] == "visual_aligned_ir_audio"
+            )
+            self.assertEqual(
+                aligned_ir_trial["audio_content"],
+                "shifted-selected-target-ir-plus-background-carrier",
+            )
+            self.assertTrue(generator.manifest_is_complete(
+                manifest, manifest_path.parent,
+            ))
 
     def test_glyph_staircase_grows_only_load_and_shuffles_condition_nature(self):
         condition_pattern = [
@@ -1304,6 +1512,15 @@ class AdvancedGeneratorTests(unittest.TestCase):
             self.assertTrue(
                 aligned_manifest["combinatorial_verification"]["verified"]
             )
+            secondary_matching = aligned_manifest[
+                "combinatorial_verification"
+            ]["secondary_signal_matching"]
+            self.assertTrue(secondary_matching["verified"])
+            self.assertEqual(
+                secondary_matching,
+                aligned_manifest["condition_assignment"]
+                ["secondary_signal_matching"],
+            )
             self.assertEqual(
                 aligned_manifest["combinatorial_verification"]
                 ["identity_density_balance"]["load_basis"],
@@ -1323,6 +1540,14 @@ class AdvancedGeneratorTests(unittest.TestCase):
             )
             for stimulus in aligned_manifest["stimuli"]:
                 condition = stimulus["assigned_condition"]
+                self.assertEqual(
+                    stimulus["secondary_signal_matching_version"],
+                    generator.SECONDARY_SIGNAL_MATCHING_VERSION,
+                )
+                self.assertEqual(
+                    stimulus["secondary_signal_glyph_count"],
+                    len(stimulus["secondary_signal_position_indices"]),
+                )
                 expected_base_colours = [
                     list(colour)
                     for colour in SOURCE_COLOURS[:len(stimulus["source_ids"])]
@@ -1356,6 +1581,9 @@ class AdvancedGeneratorTests(unittest.TestCase):
                     self.assertEqual(
                         stimulus["canonical_target_mask_sha256"],
                         stimulus["aligned_visual_base_mask_sha256"],
+                    )
+                    self.assertIsNotNone(
+                        stimulus["aligned_signal_base_mask_sha256"],
                     )
                     self.assertEqual(
                         stimulus["aligned_target_mask_sha256"],
@@ -1462,6 +1690,16 @@ class AdvancedGeneratorTests(unittest.TestCase):
                 aligned_manifest, aligned_path.parent,
             ))
             identity_stimulus["aligned_visual_palette_version"] = original_palette
+            original_positions = identity_stimulus[
+                "secondary_signal_position_indices"
+            ]
+            identity_stimulus["secondary_signal_position_indices"] = []
+            self.assertFalse(generator.manifest_is_complete(
+                aligned_manifest, aligned_path.parent,
+            ))
+            identity_stimulus[
+                "secondary_signal_position_indices"
+            ] = original_positions
             complementary = next(
                 item for item in aligned_manifest["stimuli"]
                 if item["assigned_condition"] == "ir_audio"

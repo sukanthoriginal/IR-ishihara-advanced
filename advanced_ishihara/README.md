@@ -128,18 +128,25 @@ session engine:
   both its visual-yellow and visual-IR complementary conditions from sequences
   containing a canonical change, while fixing exact condition×glyph margins
   without changing the standard Mixed mode;
+- matches secondary-cue glyph participation inside each four-way modality and
+  glyph count: complementary positions are exactly the changed positions, while
+  aligned identity positions are a deterministic largest-remainder sample of
+  the paired complementary distribution; this annotation-and-render pass does
+  not alter sources, targets, mapping IDs, choices, signatures, repetitions, or
+  any condition×glyph margin;
 - supports a glyph-staircase schedule that advances only from one to three
   glyphs while reproducibly shuffling identity, aligned, and complementary
   condition nature inside each glyph tier without changing any exact
   condition×glyph margin;
-- derives a positional red/red+green/RGB identity base, complete shifted yellow
-  copies, and shifted IR copies from the same canonical per-glyph masks; records
-  matching aggregate mask digests; and verifies that either layer still carries
-  the complete identity while the complementary renderer remains unchanged;
+- derives a complete positional red/red+green/RGB identity base plus selected
+  shifted yellow or IR redundancy from the same canonical per-glyph masks;
+  records both complete and selected mask digests, and verifies the selected
+  position profile independently of the unchanged complementary renderer;
 - renders all four conditions on one balanced diagonal-dyad carrier; channel B
-  is a bijective one-cell copy of channel A, giving exact equality of channel
-  token count, radius histogram, nominal area, and active raster-pixel count
-  without introducing half-dot or density cues; the fine carrier uses a
+  is a bijective one-cell copy of channel A in the underlying carrier, keeping
+  carrier token count, radius histogram, nominal area, and active raster-pixel
+  opportunity fixed even when the secondary cue uses only selected glyphs; the
+  fine carrier uses a
   12-pixel plate pitch mapped exactly to three audio-mask columns;
 - assigns mixed stimuli to carrier-controlled visual-background and IR-audio
   conditions without repeating a puzzle, provisionally matching within glyph
@@ -159,6 +166,18 @@ into `I^k` all-identity sequences and `M^k-I^k` sequences containing a change.
 Consequently its one-glyph counts reproduce the declared tables exactly:
 training `60 = 13 + 47`, held-out testing `30 = 6 + 24`. The manifest records
 and verifies this partition for all three glyph lengths.
+
+Secondary-cue participation in Four-way mixed is therefore:
+
+| Glyphs | Complementary cue | Aligned redundant cue |
+| --- | --- | --- |
+| 1 | `1/1` | `1/1` |
+| 2 | `1/2` or `2/2` | the paired distribution of `1/2` and `2/2` |
+| 3 | `1/3`, `2/3`, or `3/3` | the paired distribution of all three ratios |
+
+When paired condition×glyph groups have different trial counts, exact equality
+of raw counts is impossible; seeded largest-remainder apportionment gives the
+nearest integer distribution and records the resulting error in the manifest.
 
 The final confirmatory protocol should freeze the foil-ranking rule and
 establish difficulty strata from pilot data. The raw grammar and stable IDs

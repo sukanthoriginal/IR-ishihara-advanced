@@ -177,6 +177,25 @@ def draw_position_masks(geometry_ids: tuple[str, ...] | list[str]) -> list[Image
     return masks
 
 
+def draw_position_subset_mask(
+    geometry_ids: tuple[str, ...] | list[str],
+    position_indices: tuple[int, ...] | list[int],
+) -> Image.Image:
+    """Draw only the selected zero-based glyph positions from a sequence."""
+    indices = list(position_indices)
+    if (
+        not indices
+        or indices != sorted(set(indices))
+        or any(index < 0 or index >= len(geometry_ids) for index in indices)
+    ):
+        raise ValueError("position_indices must be sorted, unique, and in range")
+    selected = Image.new("L", (AUDIO_WIDTH, AUDIO_HEIGHT), 0)
+    for index, position_mask in enumerate(draw_position_masks(geometry_ids)):
+        if index in indices:
+            selected = ImageChops.lighter(selected, position_mask)
+    return selected
+
+
 def translate_mask_without_clipping(
     mask: Image.Image,
     dx: int,
@@ -286,6 +305,7 @@ def render_trial_images(
     include_aligned_assets: bool = False,
     include_balanced_carrier_assets: bool = False,
     include_visual_complementary_asset: bool = False,
+    aligned_signal_position_indices: tuple[int, ...] | list[int] | None = None,
 ) -> dict:
     rng = np.random.default_rng(seed)
     source_mask, diagnostic_mask, target_mask = difference_mask(source_ids, target_ids)
@@ -353,8 +373,16 @@ def render_trial_images(
                 "visible complementary source differs from balanced source"
             )
     if include_aligned_assets:
+        selected_positions = (
+            list(range(len(target_ids)))
+            if aligned_signal_position_indices is None
+            else list(aligned_signal_position_indices)
+        )
+        aligned_signal_base_mask = draw_position_subset_mask(
+            target_ids, selected_positions,
+        )
         aligned_target_mask = translate_mask_without_clipping(
-            target_mask, aligned_dx, aligned_dy,
+            aligned_signal_base_mask, aligned_dx, aligned_dy,
         )
         target_position_masks = draw_position_masks(target_ids)
         canonical_visual_plate, canonical_stats = _draw_balanced_dyad_plate(
@@ -370,24 +398,18 @@ def render_trial_images(
             SOURCE_COLOURS,
             np.random.default_rng(plate_colour_seed),
             shift_audio_dx=aligned_dx,
-            copy_channel_a_to_b=True,
+            channel_b_mask=aligned_target_mask,
         )
         if (
             canonical_stats["carrier_occupancy_sha256"]
             != aligned_stats["carrier_occupancy_sha256"]
         ):
             raise RuntimeError("canonical and aligned carrier geometry differ")
-        if (
-            aligned_stats["channel_a_dot_count"]
-            != aligned_stats["channel_b_dot_count"]
-            or aligned_stats["channel_a_radius_histogram"]
-            != aligned_stats["channel_b_radius_histogram"]
-            or aligned_stats["channel_a_radius_area_units"]
-            != aligned_stats["channel_b_radius_area_units"]
-            or aligned_stats["channel_a_active_pixel_count"]
-            != aligned_stats["channel_b_active_pixel_count"]
+        if not (
+            0 < aligned_stats["channel_b_dot_count"]
+            <= aligned_stats["channel_a_dot_count"]
         ):
-            raise RuntimeError("aligned visible channels differ in density")
+            raise RuntimeError("aligned secondary signal has invalid dot coverage")
         aligned_input = _make_probe_from_background(
             aligned_target_mask,
             background_input,
@@ -534,6 +556,9 @@ def render_trial_images(
             "aligned_target_pixel_count": int(
                 np.count_nonzero(np.asarray(aligned_target_mask))
             ),
+            "aligned_signal_base_pixel_count": int(
+                np.count_nonzero(np.asarray(aligned_signal_base_mask))
+            ),
             "canonical_target_pixel_count": int(
                 np.count_nonzero(np.asarray(target_mask))
             ),
@@ -576,10 +601,15 @@ def render_trial_images(
             "canonical_target_mask_sha256": mask_digest(target_mask),
             "aligned_target_mask_sha256": mask_digest(aligned_target_mask),
             "aligned_visual_base_mask_sha256": mask_digest(target_mask),
+            "aligned_signal_base_mask_sha256": mask_digest(
+                aligned_signal_base_mask
+            ),
             "aligned_visual_shifted_mask_sha256": mask_digest(
                 aligned_target_mask
             ),
-            "alignment_equivalence_version": "canonical-target-mask-v1",
+            "alignment_equivalence_version": (
+                "selected-target-position-redundancy-v2"
+            ),
             "aligned_visual_base_channel_position": "seeded-diagonal-a",
             "aligned_visual_shifted_channel_position": "seeded-diagonal-b",
             "aligned_visual_base_colours": [
