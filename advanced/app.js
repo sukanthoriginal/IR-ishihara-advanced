@@ -515,9 +515,9 @@ async function prepareBlock() {
     return showPrepareError('Stimuli must be an integer from 4 to 96.');
   }
   if (
-    ![1, 2, 3].includes(initialSnapshot.sweepRepetitions)
+    ![1, 2, 3, 4, 5].includes(initialSnapshot.sweepRepetitions)
   ) {
-    return showPrepareError('Audio sweeps must be 1, 2, or 3.');
+    return showPrepareError('Audio sweeps must be a whole number from 1 to 5.');
   }
   if (
     !Number.isInteger(initialSnapshot.seed)

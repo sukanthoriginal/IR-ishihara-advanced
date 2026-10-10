@@ -147,12 +147,12 @@ class AdvancedGeneratorTests(unittest.TestCase):
     def test_sweep_setting_preserves_default_and_rejects_invalid_counts(self):
         baseline = generator.normalize_settings({})
         self.assertEqual(generator.normalize_settings({"sweepRepetitions": 3}), baseline)
-        for count in (1, 2):
+        for count in (1, 2, 4, 5):
             self.assertEqual(
                 generator.normalize_settings({"sweepRepetitions": count}),
                 {**baseline, "sweepRepetitions": count},
             )
-        for invalid in (0, 4, -1, 1.5, True, None, "one"):
+        for invalid in (0, 6, -1, 1.5, True, None, "one"):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 generator.normalize_settings({"sweepRepetitions": invalid})
 
@@ -164,7 +164,7 @@ class AdvancedGeneratorTests(unittest.TestCase):
                     "baseStimulusCount": 30, "glyphComposition": "3", "seed": 1729,
                 }
                 baseline = generator.plan_session(settings, grammar=self.grammar)
-                for count in (1, 2):
+                for count in (1, 2, 4, 5):
                     with self.subTest(split=split, signal_mode=signal_mode, count=count):
                         short = generator.plan_session(
                             {**settings, "sweepRepetitions": count}, grammar=self.grammar,
@@ -193,7 +193,7 @@ class AdvancedGeneratorTests(unittest.TestCase):
                 if path.is_file() and path.suffix in {".png", ".wav"}
             }
             self.assertTrue(any(path.suffix == ".wav" for path in assets))
-            for count, duration in ((1, 1050), (2, 2350)):
+            for count, duration in ((1, 1050), (2, 2350), (4, 4950), (5, 6250)):
                 with self.subTest(count=count):
                     path, manifest = generator.prepare_session(
                         {**settings, "sweepRepetitions": count}, root,

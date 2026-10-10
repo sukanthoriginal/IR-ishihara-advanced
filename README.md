@@ -87,9 +87,9 @@ repeated pairs, the visual comparator receives the background-only carrier
 while the IR condition receives the diagnostic plus that carrier. The plate
 remains static; only the audio algorithm sweeps.
 
-Audio sweeps can be set to 1, 2, or 3; the default remains three. Each sweep
+Audio sweeps can be set from 1 to 5; the default remains three. Each sweep
 lasts 1.05 seconds, with 250 ms between sweeps. The shared visual/audio exposure
-window is therefore 1.05, 2.35, or 3.65 seconds. After that window, the unchanged
+window is therefore 1.05, 2.35, 3.65, 4.95, or 6.25 seconds. After that window, the unchanged
 220 ms mask appears. The participant then chooses among four unique
 complete interpretations. Changed trials retain the target and unchanged-source
 decoy. Identity trials contain the identity target once and use nearby canonical
@@ -116,7 +116,7 @@ experimental blocks:
   or **Shuffled** progression across the balanced difficulty range;
 - manual feedback (on by default), keyboard or pointer response, and compact,
   expanded, or physically calibrated presentation;
-- one, two, or three audio sweeps, with three preserving the original timing; and
+- one to five audio sweeps, with three preserving the original timing; and
 - automatic balanced one-/two-/three-glyph composition, or a forced glyph
   count, plus a configurable Four-way mixed condition ratio, under **Advanced
   block settings**.
@@ -136,7 +136,7 @@ condition assignments, rendered plates and single-sweep audio are identical.
 The task remains schema 12; CSV rows already record `audio_sweeps_planned`,
 `stimulus_duration_planned_ms`, and both choice-onset and stimulus-onset RT.
 Compare runs with the same sweep count when assessing performance over time.
-The generator CLI accepts `--sweeps 1`, `--sweeps 2`, or `--sweeps 3`.
+The generator CLI accepts `--sweeps` from 1 to 5, defaulting to 3.
 
 For Four-way mixed, exact largest-remainder apportionment fixes both the
 condition totals and the one-/two-/three-glyph totals. With 30 plates at

@@ -82,6 +82,7 @@ DIFFICULTY_COMPONENT_WEIGHTS = {
     "family_ambiguity": 0.1,
 }
 SWEEP_REPETITIONS = 3
+MAX_SWEEP_REPETITIONS = 5
 INTER_SWEEP_INTERVAL_MS = 250
 MASK_DURATION_MS = 220
 ALIGNED_MIXED_CONDITIONS = (
@@ -214,8 +215,8 @@ def normalize_settings(settings: dict) -> dict:
     sweep_repetitions = _coerce_integer(
         settings.get("sweepRepetitions", SWEEP_REPETITIONS), "sweepRepetitions",
     )
-    if not 1 <= sweep_repetitions <= SWEEP_REPETITIONS:
-        raise ValueError("sweepRepetitions must be between 1 and 3")
+    if not 1 <= sweep_repetitions <= MAX_SWEEP_REPETITIONS:
+        raise ValueError("sweepRepetitions must be between 1 and 5")
 
     seed = _coerce_integer(settings.get("seed", 1729), "seed")
     if not 0 <= seed <= 0xFFFFFFFF:
@@ -3115,7 +3116,7 @@ def manifest_is_complete(manifest: dict, root: Path) -> bool:
     )
     if (
         type(sweep_repetitions) is not int
-        or not 1 <= sweep_repetitions <= SWEEP_REPETITIONS
+        or not 1 <= sweep_repetitions <= MAX_SWEEP_REPETITIONS
         or manifest.get("sweep_repetitions") != sweep_repetitions
         or manifest.get("sweep_duration_ms") != round(SWEEP_DURATION_S * 1000)
         or manifest.get("inter_sweep_interval_ms") != INTER_SWEEP_INTERVAL_MS
@@ -3831,7 +3832,7 @@ def parse_args() -> argparse.Namespace:
         "--feedback", action=argparse.BooleanOptionalAction, default=True,
     )
     parser.add_argument("--seed", type=int, default=1729)
-    parser.add_argument("--sweeps", type=int, choices=(1, 2, 3), default=SWEEP_REPETITIONS)
+    parser.add_argument("--sweeps", type=int, choices=range(1, MAX_SWEEP_REPETITIONS + 1), default=SWEEP_REPETITIONS)
     parser.add_argument("--mixed-condition-ratio", default="1:1:1:2")
     parser.add_argument("--out", type=Path, default=REPO_ROOT / "advanced_sessions")
     return parser.parse_args()

@@ -27,9 +27,11 @@ assert.equal(estimatedDuration(30, true), '≈ 3 min 16 sec');
 assert.equal(estimatedDuration(30, true, 3), '≈ 3 min 16 sec');
 assert.equal(estimatedDuration(30, true, 2), '≈ 2 min 37 sec');
 assert.equal(estimatedDuration(30, true, 1), '≈ 1 min 58 sec');
+assert.equal(estimatedDuration(30, true, 4), '≈ 3 min 55 sec');
+assert.equal(estimatedDuration(30, true, 5), '≈ 4 min 34 sec');
 
 const buffer = { originalSingleSweep: true };
-for (const repetitions of [1, 2, 3]) {
+for (const repetitions of [1, 2, 3, 4, 5]) {
   const starts = [], buffers = [];
   const context = {
     currentTime: 10, destination: {},
