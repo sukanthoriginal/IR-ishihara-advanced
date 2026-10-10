@@ -3,6 +3,7 @@ import {
   compactStageSize,
   fitAspectRatio,
   median,
+  repeatedStimulusDurationMs,
   visualAngleDeg,
 } from '../shared/timing.mjs';
 import { safeFilenamePart, saveCsv } from '../shared/csv.mjs';
@@ -110,7 +111,7 @@ document.getElementById('new-seed-btn').addEventListener('click', () => {
 for (const id of [
   'split', 'signal-mode', 'base-stimulus-count', 'progression',
   'feedback-enabled', 'glyph-composition', 'seed',
-  'mixed-condition-ratio',
+  'mixed-condition-ratio', 'sweep-repetitions',
 ]) {
   document.getElementById(id).addEventListener('input', () => {
     updateSetupPreview();
@@ -514,6 +515,11 @@ async function prepareBlock() {
     return showPrepareError('Stimuli must be an integer from 4 to 96.');
   }
   if (
+    ![1, 2, 3].includes(initialSnapshot.sweepRepetitions)
+  ) {
+    return showPrepareError('Audio sweeps must be 1, 2, or 3.');
+  }
+  if (
     !Number.isInteger(initialSnapshot.seed)
     || initialSnapshot.seed < 0
     || initialSnapshot.seed > MAX_UINT32
@@ -598,6 +604,9 @@ async function prepareBlock() {
     if (info.sessionId !== preparedManifest.session_id) {
       throw new Error('The prepared session identifier does not match its manifest.');
     }
+    if (preparedManifest.sweep_repetitions !== requestSnapshot.sweepRepetitions) {
+      throw new Error('The prepared sweep count does not match the selected setting.');
+    }
     const preparedAudit = normalizeRandomizationAudit(
       info.randomizationAudit,
       requestSnapshot.seed,
@@ -658,6 +667,7 @@ function readPreparationSnapshot() {
     glyphComposition: document.getElementById('glyph-composition').value,
     progression: document.getElementById('progression').value,
     feedbackEnabled: document.getElementById('feedback-enabled').value === 'on',
+    sweepRepetitions: Number(document.getElementById('sweep-repetitions').value),
     mixedConditionRatio: document.getElementById('mixed-condition-ratio').value.trim(),
     seed: seedText === '' ? NaN : Number(seedText),
   };
@@ -677,6 +687,7 @@ function preparationSnapshotsEqual(left, right) {
     && left.glyphComposition === right.glyphComposition
     && left.progression === right.progression
     && left.feedbackEnabled === right.feedbackEnabled
+    && left.sweepRepetitions === right.sweepRepetitions
     && left.mixedConditionRatio === right.mixedConditionRatio
     && left.seed === right.seed;
 }
@@ -1020,6 +1031,7 @@ function updateSetupPreview() {
   const baseStimulusCount = Number(document.getElementById('base-stimulus-count').value);
   const glyphComposition = document.getElementById('glyph-composition').value;
   const feedbackEnabled = document.getElementById('feedback-enabled').value === 'on';
+  const sweepRepetitions = Number(document.getElementById('sweep-repetitions').value);
   const seedValue = document.getElementById('seed').value.trim();
   const seed = seedValue === '' ? NaN : Number(seedValue);
   const ratioText = document.getElementById('mixed-condition-ratio').value.trim();
@@ -1057,7 +1069,7 @@ function updateSetupPreview() {
     : '—';
   document.getElementById('preview-duration').textContent = presentationCount === null
     ? '—'
-    : formatEstimatedDuration(presentationCount, feedbackEnabled);
+    : formatEstimatedDuration(presentationCount, feedbackEnabled, sweepRepetitions);
   document.getElementById('preview-source').textContent = split === 'train'
     ? 'Training · 13/19 families'
     : 'Held-out · 6/19 families';
@@ -1157,10 +1169,11 @@ function weightedQuotas(count, weights, seed) {
   return counts;
 }
 
-function formatEstimatedDuration(presentationCount, feedbackEnabled) {
+function formatEstimatedDuration(presentationCount, feedbackEnabled, sweepRepetitions = 3) {
   const feedbackSeconds = feedbackEnabled ? 0.65 : 0.18;
+  const exposureSeconds = repeatedStimulusDurationMs(1050, sweepRepetitions, 250) / 1000;
   const totalSeconds = Math.round(presentationCount * (
-    3.65 + 0.22 + ESTIMATED_RESPONSE_SECONDS + feedbackSeconds
+    exposureSeconds + 0.22 + ESTIMATED_RESPONSE_SECONDS + feedbackSeconds
   ));
   if (totalSeconds < 60) return `≈ ${totalSeconds} sec`;
   const minutes = Math.floor(totalSeconds / 60);

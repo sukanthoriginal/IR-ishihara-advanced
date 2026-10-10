@@ -1,3 +1,5 @@
+import copy
+import hashlib
 import math
 import random
 import subprocess
@@ -141,6 +143,78 @@ class AdvancedGeneratorTests(unittest.TestCase):
         self.assertEqual(arguments.stimuli, 30)
         self.assertEqual(arguments.progression, "glyph-growing")
         self.assertTrue(arguments.feedback)
+
+    def test_sweep_setting_preserves_default_and_rejects_invalid_counts(self):
+        baseline = generator.normalize_settings({})
+        self.assertEqual(generator.normalize_settings({"sweepRepetitions": 3}), baseline)
+        for count in (1, 2):
+            self.assertEqual(
+                generator.normalize_settings({"sweepRepetitions": count}),
+                {**baseline, "sweepRepetitions": count},
+            )
+        for invalid in (0, 4, -1, 1.5, True, None, "one"):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                generator.normalize_settings({"sweepRepetitions": invalid})
+
+    def test_sweep_count_leaves_puzzles_and_randomization_identical(self):
+        for split in ("train", "test"):
+            for signal_mode in ("visual", "visual-aligned", "ir", "mixed", "mixed-aligned", "paired"):
+                settings = {
+                    "split": split, "signalMode": signal_mode,
+                    "baseStimulusCount": 30, "glyphComposition": "3", "seed": 1729,
+                }
+                baseline = generator.plan_session(settings, grammar=self.grammar)
+                for count in (1, 2):
+                    with self.subTest(split=split, signal_mode=signal_mode, count=count):
+                        short = generator.plan_session(
+                            {**settings, "sweepRepetitions": count}, grammar=self.grammar,
+                        )
+                        short["settings"].pop("sweepRepetitions")
+                        self.assertEqual(short, baseline)
+
+    @patch.object(generator, "generate_soundscape")
+    def test_sweep_count_changes_only_timing_and_keeps_assets_and_schedule_identical(self, generate):
+        generate.side_effect = self._write_fake_soundscape
+        settings = {
+            "split": "test", "signalMode": "mixed-aligned",
+            "baseStimulusCount": 5, "glyphComposition": "3", "seed": 1729,
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            baseline_path, baseline = generator.prepare_session(settings, root)
+            explicit_path, explicit = generator.prepare_session(
+                {**settings, "sweepRepetitions": 3}, root,
+            )
+            self.assertEqual(explicit_path, baseline_path)
+            self.assertEqual(explicit, baseline)
+            assets = {
+                path.relative_to(baseline_path.parent): hashlib.sha256(path.read_bytes()).hexdigest()
+                for path in baseline_path.parent.rglob("*")
+                if path.is_file() and path.suffix in {".png", ".wav"}
+            }
+            self.assertTrue(any(path.suffix == ".wav" for path in assets))
+            for count, duration in ((1, 1050), (2, 2350)):
+                with self.subTest(count=count):
+                    path, manifest = generator.prepare_session(
+                        {**settings, "sweepRepetitions": count}, root,
+                    )
+                    self.assertNotEqual(path, baseline_path)
+                    self.assertEqual(manifest["sweep_repetitions"], count)
+                    self.assertEqual(manifest["stimulus_duration_ms"], duration)
+                    self.assertTrue(generator.manifest_is_complete(manifest, path.parent))
+                    comparable = copy.deepcopy(manifest)
+                    comparable["settings"].pop("sweepRepetitions")
+                    for field in ("session_id", "sweep_repetitions", "stimulus_duration_ms"):
+                        comparable[field] = baseline[field]
+                    self.assertEqual(comparable, baseline)
+                    self.assertEqual({
+                        asset.relative_to(path.parent): hashlib.sha256(asset.read_bytes()).hexdigest()
+                        for asset in path.parent.rglob("*")
+                        if asset.is_file() and asset.suffix in {".png", ".wav"}
+                    }, assets)
+                    for field, invalid in (("sweep_repetitions", 3), ("stimulus_duration_ms", 3650)):
+                        tampered = {**manifest, field: invalid}
+                        self.assertFalse(generator.manifest_is_complete(tampered, path.parent))
 
     def test_automatic_glyph_quotas_are_even_with_seeded_remainders(self):
         self.assertEqual(

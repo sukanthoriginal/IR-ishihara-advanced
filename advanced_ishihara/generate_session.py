@@ -211,6 +211,12 @@ def normalize_settings(settings: dict) -> dict:
     if not isinstance(feedback_enabled, bool):
         raise ValueError("feedbackEnabled must be a boolean")
 
+    sweep_repetitions = _coerce_integer(
+        settings.get("sweepRepetitions", SWEEP_REPETITIONS), "sweepRepetitions",
+    )
+    if not 1 <= sweep_repetitions <= SWEEP_REPETITIONS:
+        raise ValueError("sweepRepetitions must be between 1 and 3")
+
     seed = _coerce_integer(settings.get("seed", 1729), "seed")
     if not 0 <= seed <= 0xFFFFFFFF:
         raise ValueError("seed must be an unsigned 32-bit integer")
@@ -225,6 +231,9 @@ def normalize_settings(settings: dict) -> dict:
         "seed": seed,
         "schemaVersion": SCHEMA_VERSION,
     }
+    # Keep the default settings and cache identity identical to schema 12.
+    if sweep_repetitions != SWEEP_REPETITIONS:
+        normalized["sweepRepetitions"] = sweep_repetitions
     if signal_mode == "mixed-aligned":
         weights = normalize_aligned_mixed_ratio(
             settings.get("mixedConditionRatio", DEFAULT_ALIGNED_MIXED_RATIO),
@@ -542,6 +551,7 @@ def prepare_session(
     repo_root: Path = REPO_ROOT,
 ) -> tuple[Path, dict]:
     normalized = normalize_settings(settings)
+    sweep_repetitions = normalized.get("sweepRepetitions", SWEEP_REPETITIONS)
     grammar = load_grammar(repo_root)
     cache_identity = {
         **normalized,
@@ -910,11 +920,11 @@ def prepare_session(
             "audio_spatial_rows": AUDIO_HEIGHT,
             "coordinate_mapping": "full-frame-normalized-no-crop",
             "sweep_duration_ms": round(SWEEP_DURATION_S * 1000),
-            "sweep_repetitions": SWEEP_REPETITIONS,
+            "sweep_repetitions": sweep_repetitions,
             "inter_sweep_interval_ms": INTER_SWEEP_INTERVAL_MS,
             "stimulus_duration_ms": round(
-                SWEEP_DURATION_S * 1000 * SWEEP_REPETITIONS
-                + INTER_SWEEP_INTERVAL_MS * (SWEEP_REPETITIONS - 1)
+                SWEEP_DURATION_S * 1000 * sweep_repetitions
+                + INTER_SWEEP_INTERVAL_MS * (sweep_repetitions - 1)
             ),
             "mask_duration_ms": MASK_DURATION_MS,
             "sample_rate_hz": SAMPLE_RATE_HZ,
@@ -3100,6 +3110,22 @@ def manifest_is_complete(manifest: dict, root: Path) -> bool:
         return False
     if manifest.get("audio_render_version") != AUDIO_RENDER_VERSION:
         return False
+    sweep_repetitions = manifest.get("settings", {}).get(
+        "sweepRepetitions", SWEEP_REPETITIONS,
+    )
+    if (
+        type(sweep_repetitions) is not int
+        or not 1 <= sweep_repetitions <= SWEEP_REPETITIONS
+        or manifest.get("sweep_repetitions") != sweep_repetitions
+        or manifest.get("sweep_duration_ms") != round(SWEEP_DURATION_S * 1000)
+        or manifest.get("inter_sweep_interval_ms") != INTER_SWEEP_INTERVAL_MS
+        or manifest.get("stimulus_duration_ms") != round(
+            SWEEP_DURATION_S * 1000 * sweep_repetitions
+            + INTER_SWEEP_INTERVAL_MS * (sweep_repetitions - 1)
+        )
+        or manifest.get("mask_duration_ms") != MASK_DURATION_MS
+    ):
+        return False
     signal_mode = manifest.get("settings", {}).get("signalMode")
     audio_expected = signal_mode in {"ir", "mixed", "mixed-aligned", "paired"}
     if manifest.get("audio_generated") != audio_expected:
@@ -3805,6 +3831,7 @@ def parse_args() -> argparse.Namespace:
         "--feedback", action=argparse.BooleanOptionalAction, default=True,
     )
     parser.add_argument("--seed", type=int, default=1729)
+    parser.add_argument("--sweeps", type=int, choices=(1, 2, 3), default=SWEEP_REPETITIONS)
     parser.add_argument("--mixed-condition-ratio", default="1:1:1:2")
     parser.add_argument("--out", type=Path, default=REPO_ROOT / "advanced_sessions")
     return parser.parse_args()
@@ -3821,6 +3848,7 @@ if __name__ == "__main__":
             "progression": arguments.progression,
             "feedbackEnabled": arguments.feedback,
             "seed": arguments.seed,
+            "sweepRepetitions": arguments.sweeps,
             "mixedConditionRatio": arguments.mixed_condition_ratio,
         },
         arguments.out,

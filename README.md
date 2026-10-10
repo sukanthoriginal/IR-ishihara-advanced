@@ -17,7 +17,7 @@ structurally matches them and divides them between:
 - **Visual diagnostic + neutral carrier** -- the complete diagnostic is
   visible and a background-only soundscape is played; and
 - **IR-audio diagnostic** -- only the source scaffold is visible while the
-  added strokes are carried by three left-to-right vOICe sweeps.
+  added strokes are carried by left-to-right vOICe sweeps (three by default).
 
 An even `N` gives exactly equal condition counts. For an odd `N`, the counts
 differ by one and the reproducible run code deterministically assigns the
@@ -87,8 +87,10 @@ repeated pairs, the visual comparator receives the background-only carrier
 while the IR condition receives the diagnostic plus that carrier. The plate
 remains static; only the audio algorithm sweeps.
 
-After 3 × 1.05-second sweeps and two 250 ms inter-sweep intervals (3.65 seconds
-total), a 220 ms mask appears. The participant then chooses among four unique
+Audio sweeps can be set to 1, 2, or 3; the default remains three. Each sweep
+lasts 1.05 seconds, with 250 ms between sweeps. The shared visual/audio exposure
+window is therefore 1.05, 2.35, or 3.65 seconds. After that window, the unchanged
+220 ms mask appears. The participant then chooses among four unique
 complete interpretations. Changed trials retain the target and unchanged-source
 decoy. Identity trials contain the identity target once and use nearby canonical
 geometry foils when a small family cannot supply three distinct alternatives.
@@ -113,7 +115,8 @@ experimental blocks:
   condition nature within each tier, **Growing practice** from simpler to harder,
   or **Shuffled** progression across the balanced difficulty range;
 - manual feedback (on by default), keyboard or pointer response, and compact,
-  expanded, or physically calibrated presentation; and
+  expanded, or physically calibrated presentation;
+- one, two, or three audio sweeps, with three preserving the original timing; and
 - automatic balanced one-/two-/three-glyph composition, or a forced glyph
   count, plus a configurable Four-way mixed condition ratio, under **Advanced
   block settings**.
@@ -126,6 +129,14 @@ code and redraw count. The automatic glyph policy divides base stimuli as
 evenly as possible across one, two, and three glyphs; a seeded remainder rule
 makes the preview and generated manifest agree for counts not divisible by
 three.
+
+Changing the sweep count changes only playback repetition and its exposure
+duration. For a fixed run code and history state, puzzles, choices, order,
+condition assignments, rendered plates and single-sweep audio are identical.
+The task remains schema 12; CSV rows already record `audio_sweeps_planned`,
+`stimulus_duration_planned_ms`, and both choice-onset and stimulus-onset RT.
+Compare runs with the same sweep count when assessing performance over time.
+The generator CLI accepts `--sweeps 1`, `--sweeps 2`, or `--sweeps 3`.
 
 For Four-way mixed, exact largest-remainder apportionment fixes both the
 condition totals and the one-/two-/three-glyph totals. With 30 plates at
